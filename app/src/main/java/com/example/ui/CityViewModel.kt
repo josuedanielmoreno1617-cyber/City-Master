@@ -135,8 +135,9 @@ class CityViewModel(private val repository: CityRepository) : ViewModel() {
                 if (updateTick >= 1.0f) {
                     updateTick = 0f
                     
-                    val currentState = repository.cityState.first() ?: continue
-                    val activeBuildings = repository.buildings.first()
+                    val currentState = uiState.value
+                    if (!currentState.isInitialized) continue
+                    val activeBuildings = currentState.buildings
                     
                     // 1. Calculate resources produced by constructions
                     var totalPowerProvided = 0
@@ -223,7 +224,8 @@ class CityViewModel(private val repository: CityRepository) : ViewModel() {
                         else -> 1
                     }
                     
-                    val newState = currentState.copy(
+                    val newState = CityStateEntity(
+                        id = 1,
                         money = currentState.money + netIncome,
                         population = currentPop,
                         day = currentState.day + 1,
@@ -244,10 +246,22 @@ class CityViewModel(private val repository: CityRepository) : ViewModel() {
 
     fun build(type: BuildingType, x: Int, y: Int) {
         viewModelScope.launch {
-            val state = repository.cityState.first() ?: return@launch
+            val state = uiState.value
             if (state.money >= type.cost && state.level >= type.minLevelRequired) {
                 repository.deleteBuildingAt(x, y)
-                repository.updateState(state.copy(money = state.money - type.cost))
+                repository.updateState(
+                    CityStateEntity(
+                        id = 1,
+                        money = state.money - type.cost,
+                        population = state.population,
+                        day = state.day,
+                        happiness = state.happiness,
+                        power = state.power,
+                        water = state.water,
+                        pollution = state.pollution,
+                        level = state.level
+                    )
+                )
                 repository.insertBuilding(BuildingEntity(type = type.name, x = x, y = y))
             }
         }
