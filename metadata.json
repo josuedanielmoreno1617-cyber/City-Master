@@ -1,0 +1,6 @@
+{
+  "name": "Constructor de Ciudades",
+  "description": "Juego de construccion de ciudades.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
