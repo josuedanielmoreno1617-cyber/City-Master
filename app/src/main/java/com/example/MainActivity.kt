@@ -29,7 +29,7 @@ class MainActivity : ComponentActivity() {
             applicationContext,
             CityDatabase::class.java,
             "city_builder_db"
-        ).fallbackToDestructiveMigration().build()
+        ).fallbackToDestructiveMigration(true).build()
         
         repository = CityRepository(database.cityDao())
 

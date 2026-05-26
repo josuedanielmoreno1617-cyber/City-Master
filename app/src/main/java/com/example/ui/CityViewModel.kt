@@ -10,6 +10,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
@@ -27,8 +28,7 @@ data class CityUiState(
     val buildings: List<BuildingEntity> = emptyList(),
     val isInitialized: Boolean = false,
     val isIsometricMode: Boolean = true,
-    val isGraphicsAdvanced: Boolean = true,
-    val dayTimeProgress: Float = 0.2f // 0f to 1f representation
+    val isGraphicsAdvanced: Boolean = true
 )
 
 enum class BuildingType(
@@ -44,12 +44,24 @@ enum class BuildingType(
     val happinessBoost: Int = 0,
     val minLevelRequired: Int = 1
 ) {
+    DIRT_ROAD("Camino", 5, "#795548", "Pista de tierra básica rural.", 0, 0, 0, 0, 0, 0, 1),
     ROAD("Carretera", 10, "#555555", "Camino para transporte. Conecta zonas urbanas.", 0, 0, 0, 0, 0, 0, 1),
+    HIGHWAY("Autopista", 30, "#424242", "Vía rápida pavimentada y ancha.", 0, 0, 0, 0, 1, 0, 2),
     HOUSE("Residencia", 100, "#2ECC71", "Aumenta la población de la ciudad. Requiere agua/luz.", 15, 0, 0, 0, 1, 3, 1),
+    SKYSCRAPER("Rascacielos", 1500, "#34495E", "Gran densidad poblacional. Requiere servicios.", 200, 0, 0, 80, 10, -2, 5),
     FACTORY("Zona Industrial", 250, "#E74C3C", "Produce ingresos diarios muy altos pero genera polución.", 0, 0, 0, 40, 15, -8, 2),
     COMMERCE("Zona Comercial", 180, "#F1C40F", "Suministra servicios urbanos. Genera ingresos y eleva felicidad.", 0, 0, 0, 15, 2, 8, 2),
+    OFFICE("Oficinas", 800, "#95A5A6", "Centro de negocios corporativos. Genera muchos ingresos.", 0, 0, 0, 100, 5, 2, 4),
+    HOTEL("Hotel", 1000, "#F39C12", "Atrae turismo. Genera ingresos considerables y felicidad.", 10, 0, 0, 50, 8, 15, 6),
+    BANK("Banco", 1200, "#D4AF37", "Institución financiera. Capitaliza fuertemente a tu ciudad.", 0, 0, 0, 150, 2, 5, 8),
+    POLICE("Comisaría", 500, "#2980B9", "Mantiene el orden y seguridad ciudadana.", 0, 0, 0, -10, 2, 25, 3),
+    FIRE_STATION("Bomberos", 500, "#C0392B", "Responde ante emergencias estructuradas.", 0, 0, 0, -5, 2, 20, 3),
+    GOVERNMENT("Ayuntamiento", 2000, "#7F8C8D", "Centro de toma de decisiones del gobierno local.", 0, 0, 0, -50, 5, 40, 10),
+    STADIUM("Estadio", 3000, "#8E44AD", "Gran arena deportiva. Entretenimiento masivo.", 0, 0, 0, 120, 15, 60, 12),
+    COURT("Cancha Deportiva", 200, "#D35400", "Espacio para actividad deportiva local.", 0, 0, 0, -2, 1, 10, 2),
+    GOLF_COURSE("Campo de Golf", 2500, "#27AE60", "Deporte de lujo con grandes áreas verdes.", 0, 0, 0, 30, -5, 45, 15),
     PARK("Parque Sostenible", 140, "#27AE60", "Hermosas plazas verdes. Purifican polución y dan felicidad.", 0, 0, 0, 0, -10, 20, 3),
-    POWER_PLANT("Térmica Solar", 300, "#E67E22", "Genera energía para tus edificios residenciales y comerciais.", 0, 80, 0, 0, 1, 4, 3),
+    POWER_PLANT("Térmica Solar", 300, "#E67E22", "Genera energía para tus edificios residenciales y comerciales.", 0, 80, 0, 0, 1, 4, 3),
     ECOLOGIC_WATER("Acueducto", 220, "#2980B9", "Proporciona suministro de agua dulce potable.", 0, 0, 60, 0, 0, 5, 4)
 }
 
@@ -60,13 +72,14 @@ class CityViewModel(private val repository: CityRepository) : ViewModel() {
     private val _isGraphicsAdvanced = MutableStateFlow(true)
     private val _dayTimeProgress = MutableStateFlow(0.2f)
 
+    val dayTimeProgress: StateFlow<Float> = _dayTimeProgress.asStateFlow()
+
     val uiState: StateFlow<CityUiState> = combine(
         repository.cityState,
         repository.buildings,
         _isInitialized,
         _isIsometricMode,
-        _isGraphicsAdvanced,
-        _dayTimeProgress
+        _isGraphicsAdvanced
     ) { flowsArray ->
         val state = flowsArray[0] as? CityStateEntity
         @Suppress("UNCHECKED_CAST")
@@ -74,7 +87,6 @@ class CityViewModel(private val repository: CityRepository) : ViewModel() {
         val initialized = flowsArray[2] as? Boolean ?: false
         val iso = flowsArray[3] as? Boolean ?: true
         val adv = flowsArray[4] as? Boolean ?: true
-        val timeProgress = flowsArray[5] as? Float ?: 0.2f
 
         if (state == null) {
             CityUiState(isInitialized = initialized)
@@ -91,8 +103,7 @@ class CityViewModel(private val repository: CityRepository) : ViewModel() {
                 buildings = buildings,
                 isInitialized = initialized,
                 isIsometricMode = iso,
-                isGraphicsAdvanced = adv,
-                dayTimeProgress = timeProgress
+                isGraphicsAdvanced = adv
             )
         }
     }.stateIn(
@@ -128,10 +139,10 @@ class CityViewModel(private val repository: CityRepository) : ViewModel() {
         viewModelScope.launch {
             var updateTick = 0f
             while (true) {
-                delay(100) // update every 100ms
-                updateTick += 0.025f // Time cycle increment step
+                delay(1000) // update every 1000ms
+                updateTick += 0.05f // Time cycle increment step
                 
-                // Let's cycle day time: full day is 4 seconds (updateTick reaches 1.0)
+                // Let's cycle day time: full day is 20 seconds (updateTick reaches 1.0)
                 if (updateTick >= 1.0f) {
                     updateTick = 0f
                     
@@ -168,7 +179,11 @@ class CityViewModel(private val repository: CityRepository) : ViewModel() {
                     
                     // 2. Resource Requirements & Constraints check
                     val energyDemand = activeBuildings.size * 5
-                    val waterDemand = houseCount * 12
+                    var waterDemand = 0
+                    for (b in activeBuildings) {
+                        val type = try { BuildingType.valueOf(b.type) } catch (e: Exception) { null } ?: continue
+                        if (type.popProvide > 0) waterDemand += (type.popProvide * 0.8).toInt()
+                    }
                     
                     val powerShortage = totalPowerProvided < energyDemand
                     val waterShortage = totalWaterProvided < waterDemand

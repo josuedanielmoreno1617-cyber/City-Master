@@ -16,6 +16,9 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -40,16 +43,17 @@ import kotlinx.coroutines.launch
 @Composable
 fun CityScreen(viewModel: CityViewModel) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val dayProgress by viewModel.dayTimeProgress.collectAsStateWithLifecycle()
     var selectedCell by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     var selectedCategory by remember { mutableStateOf("Zonas") } // Zonas, Servicios, Espacios, Opciones
     
     val scope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState()
     var showInfoDialog by remember { mutableStateOf(false) }
+    var buildingTooltipDialog by remember { mutableStateOf<BuildingType?>(null) }
 
     // Dynamic color gradient background based on Time of Day
     // time: 0.0 (Dawn/Morning) -> 0.25 (Midday) -> 0.65 (Sunset) -> 0.8 (Night)
-    val dayProgress = uiState.dayTimeProgress
     val skyBrush = remember(dayProgress) {
         val color1: Color
         val color2: Color
@@ -269,19 +273,42 @@ fun CityScreen(viewModel: CityViewModel) {
                 }
 
                 if (uiState.isIsometricMode) {
-                    // Isometric 3D Viewport
-                    val scrollStateX = rememberScrollState(220)
-                    val scrollStateY = rememberScrollState(50)
+                    // Isometric 3D Viewport - Camara Panoramica
+                    var scale by remember { mutableFloatStateOf(0.8f) }
+                    var offsetX by remember { mutableFloatStateOf(0f) }
+                    var offsetY by remember { mutableFloatStateOf(0f) }
+                    
+                    val minScale = 0.3f
+                    val maxScale = 3f
 
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .horizontalScroll(scrollStateX)
-                            .verticalScroll(scrollStateY)
+                            .pointerInput(Unit) {
+                                detectTransformGestures { _, pan, zoom, _ ->
+                                    scale = (scale * zoom).coerceIn(minScale, maxScale)
+                                    val limitX = 2000f * scale
+                                    val limitY = 2000f * scale
+
+                                    offsetX = (offsetX + pan.x).coerceIn(-limitX, limitX)
+                                    offsetY = (offsetY + pan.y).coerceIn(-limitY, limitY)
+                                }
+                            }
                     ) {
-                        // Tilted isometric block field (width: 520.dp, height: 420.dp)
                         Box(
                             modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer(
+                                    scaleX = scale,
+                                    scaleY = scale,
+                                    translationX = offsetX,
+                                    translationY = offsetY
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            // Tilted isometric block field (width: 520.dp, height: 420.dp)
+                            Box(
+                                modifier = Modifier
                                 .width(520.dp)
                                 .height(400.dp)
                         ) {
@@ -308,6 +335,17 @@ fun CityScreen(viewModel: CityViewModel) {
                                 val xDp = ((x - y) * 41.5f) + 220f
                                 val yDp = ((x + y) * 23.5f) + 40f
 
+                                val isMyRoad = building?.type in listOf("ROAD", "DIRT_ROAD", "HIGHWAY")
+                                val roadConnections = remember(building, uiState.buildings) {
+                                    if (isMyRoad) {
+                                        val hasTop = uiState.buildings.any { it.x == x && it.y == y - 1 && it.type in listOf("ROAD", "DIRT_ROAD", "HIGHWAY") }
+                                        val hasBottom = uiState.buildings.any { it.x == x && it.y == y + 1 && it.type in listOf("ROAD", "DIRT_ROAD", "HIGHWAY") }
+                                        val hasLeft = uiState.buildings.any { it.x == x - 1 && it.y == y && it.type in listOf("ROAD", "DIRT_ROAD", "HIGHWAY") }
+                                        val hasRight = uiState.buildings.any { it.x == x + 1 && it.y == y && it.type in listOf("ROAD", "DIRT_ROAD", "HIGHWAY") }
+                                        intArrayOf(if(hasTop) 1 else 0, if(hasRight) 1 else 0, if(hasBottom) 1 else 0, if(hasLeft) 1 else 0)
+                                    } else null
+                                }
+
                                 Box(
                                     modifier = Modifier
                                         .offset(x = xDp.dp, y = yDp.dp)
@@ -320,12 +358,36 @@ fun CityScreen(viewModel: CityViewModel) {
                                         buildingString = building?.type,
                                         dayProgress = dayProgress,
                                         isGraphicsAdvanced = uiState.isGraphicsAdvanced,
-                                        isSelected = selectedCell == Pair(x, y)
+                                        isSelected = selectedCell == Pair(x, y),
+                                        roadConnections = roadConnections
                                     )
                                 }
                             }
                         }
+                        }
                     }
+
+                    // Volumetric Fog Overlay (Gráficos Avanzados - HDRP sim)
+                    if (uiState.isGraphicsAdvanced) {
+                        val fogColor = when {
+                            dayProgress < 0.2f -> Color(0xFFFF9E79).copy(alpha = 0.15f)
+                            dayProgress < 0.55f -> Color.White.copy(alpha = 0.05f)
+                            dayProgress < 0.75f -> Color(0xFF9C27B0).copy(alpha = 0.15f)
+                            else -> Color(0xFF0A0E17).copy(alpha = 0.35f)
+                        }
+                        
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(
+                                    Brush.radialGradient(
+                                        colors = listOf(Color.Transparent, fogColor),
+                                        radius = 600f
+                                    )
+                                )
+                        )
+                    }
+
                 } else {
                     // Modern Standard 2D Schematic matrix Map
                     val gridSize = 6
@@ -395,15 +457,14 @@ fun CityScreen(viewModel: CityViewModel) {
                 Column {
                     // Category Select Bar
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceAround
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.Start
                     ) {
-                        val categories = listOf("Zonas", "Servicios", "Espacios", "Ajustes")
+                        val categories = listOf("Zonas", "Vías", "Educativo/Salud", "Seguridad", "Gobierno/Finanzas", "Entretenimiento", "Ajustes")
                         categories.forEach { cat ->
                             val isSel = selectedCategory == cat
                             TextButton(
-                                onClick = { selectedCategory = cat },
-                                modifier = Modifier.weight(1f)
+                                onClick = { selectedCategory = cat }
                             ) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                     Text(
@@ -462,8 +523,12 @@ fun CityScreen(viewModel: CityViewModel) {
                     } else {
                         // Show list of buildable entities
                         val structuresList = when (selectedCategory) {
-                            "Zonas" -> listOf(BuildingType.HOUSE, BuildingType.FACTORY, BuildingType.COMMERCE)
-                            else -> listOf(BuildingType.ROAD, BuildingType.PARK, BuildingType.POWER_PLANT, BuildingType.ECOLOGIC_WATER)
+                            "Zonas" -> listOf(BuildingType.HOUSE, BuildingType.SKYSCRAPER, BuildingType.COMMERCE, BuildingType.OFFICE, BuildingType.FACTORY, BuildingType.HOTEL)
+                            "Vías" -> listOf(BuildingType.DIRT_ROAD, BuildingType.ROAD, BuildingType.HIGHWAY)
+                            "Seguridad" -> listOf(BuildingType.POLICE, BuildingType.FIRE_STATION)
+                            "Gobierno/Finanzas" -> listOf(BuildingType.BANK, BuildingType.GOVERNMENT, BuildingType.POWER_PLANT, BuildingType.ECOLOGIC_WATER)
+                            "Entretenimiento" -> listOf(BuildingType.STADIUM, BuildingType.COURT, BuildingType.GOLF_COURSE, BuildingType.PARK)
+                            else -> emptyList()
                         }
 
                         Row(
@@ -511,13 +576,15 @@ fun CityScreen(viewModel: CityViewModel) {
                                                 fontSize = 11.sp, 
                                                 fontWeight = FontWeight.Bold,
                                                 maxLines = 1,
+                                                modifier = Modifier.weight(1f),
                                                 color = if (unlocked) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.outline
                                             )
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(10.dp)
-                                                    .background(Color(android.graphics.Color.parseColor(struct.colorHex)), CircleShape)
-                                            )
+                                            IconButton(
+                                                onClick = { buildingTooltipDialog = struct },
+                                                modifier = Modifier.size(20.dp)
+                                            ) {
+                                                Icon(Icons.Default.Info, contentDescription = "Info", modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
+                                            }
                                         }
                                         Spacer(modifier = Modifier.height(4.dp))
                                         Text(struct.description, fontSize = 9.sp, lineHeight = 11.sp, maxLines = 2, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -651,6 +718,41 @@ fun CityScreen(viewModel: CityViewModel) {
                 }
             }
 
+            // Building tooltip info dialog
+            buildingTooltipDialog?.let { building ->
+                AlertDialog(
+                    onDismissRequest = { buildingTooltipDialog = null },
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(get2DIcon(building), contentDescription = null, tint = Color(android.graphics.Color.parseColor(building.colorHex)))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(building.displayName, fontWeight = FontWeight.Black)
+                        }
+                    },
+                    text = {
+                        Column {
+                            Text(building.description, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text("🏙️ Costo: $${building.cost}", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            if (building.popProvide > 0) Text("👥 Capacidad: ${building.popProvide} personas", fontSize = 13.sp)
+                            if (building.energyProvide > 0) Text("⚡ Proporciona: ${building.energyProvide}kW", fontSize = 13.sp)
+                            if (building.waterProvide > 0) Text("💧 Proporciona: ${building.waterProvide}L agua", fontSize = 13.sp)
+                            if (building.revenueProvide != 0) Text("💰 Ingresos: ${if(building.revenueProvide > 0) "+" else ""}${building.revenueProvide} al día", fontSize = 13.sp, color = if(building.revenueProvide > 0) Color(0xFF388E3C) else Color(0xFFD32F2F))
+                            if (building.pollutionProduce != 0) Text("🏭 Polución: ${if(building.pollutionProduce > 0) "+" else ""}${building.pollutionProduce} smog", fontSize = 13.sp, color = if(building.pollutionProduce > 0) Color(0xFFD32F2F) else Color(0xFF388E3C))
+                            if (building.happinessBoost != 0) Text("😊 Felicidad: ${if(building.happinessBoost > 0) "+" else ""}${building.happinessBoost}", fontSize = 13.sp, color = if(building.happinessBoost > 0) Color(0xFF388E3C) else Color(0xFFD32F2F))
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("Nivel requerido: ${building.minLevelRequired}", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { buildingTooltipDialog = null }) {
+                            Text("Cerrar")
+                        }
+                    }
+                )
+            }
+
             // Info guide dialog
             if (showInfoDialog) {
                 AlertDialog(
@@ -733,7 +835,8 @@ fun Isometric3DTile(
     buildingString: String?,
     dayProgress: Float,
     isGraphicsAdvanced: Boolean,
-    isSelected: Boolean
+    isSelected: Boolean,
+    roadConnections: IntArray? = null
 ) {
     // Construction Animation factor (0f rising to 1f)
     var key by remember(buildingString) { mutableStateOf(0) }
@@ -821,28 +924,48 @@ fun Isometric3DTile(
         }
 
         // Grass green or road asphalt gray base
-        val surfaceColor = if (buildingString == "ROAD") {
-            Color(0xFF2E3440)
-        } else if (buildingString == "FACTORY") {
-            Color(0xFF4C566A)
-        } else {
-            // green meadow layout
-            Color(0xFF48BB78)
+        val surfaceColor = when (buildingString) {
+            "ROAD" -> Color(0xFF2E3440)
+            "DIRT_ROAD" -> Color(0xFF5D4037)
+            "HIGHWAY" -> Color(0xFF1C1C1C)
+            "FACTORY" -> Color(0xFF4C566A)
+            else -> Color(0xFF48BB78) // green meadow layout
         }
         drawPath(topRhombusPath, color = surfaceColor.copy(alpha = illuminationCoefficient))
 
         // Road separator drawing
-        if (buildingString == "ROAD") {
-            drawLine(
-                color = Color(0xFFD8DEE9),
-                start = Offset(w / 2 - rw / 4, gY + rh / 2 - rh / 8),
-                end = Offset(w / 2 + rw / 4, gY + rh / 2 + rh / 8),
-                strokeWidth = 2f
-            )
+        if (roadConnections != null) {
+            val lineColor = when (buildingString) { "DIRT_ROAD" -> Color(0xFF8D6E63); "HIGHWAY" -> Color(0xFFF1C40F); else -> Color(0xFFD8DEE9) }
+            val cX = w / 2
+            val cY = gY + rh / 2
+            
+            // Si hay cruces o conexiones
+            val topH = roadConnections[0] == 1
+            val rightH = roadConnections[1] == 1
+            val bottomH = roadConnections[2] == 1
+            val leftH = roadConnections[3] == 1
+            
+            val totalConns = roadConnections.sum()
+            
+            // Dibujar lineas centrales
+            if (totalConns <= 1 || (topH && bottomH && !leftH && !rightH)) {
+                // Recta vertical
+                drawLine(lineColor, Offset(cX - rw/4, cY - rh/4), Offset(cX + rw/4, cY + rh/4), strokeWidth = 2f)
+            } else if (leftH && rightH && !topH && !bottomH) {
+                // Recta horizontal
+                drawLine(lineColor, Offset(cX - rw/4, cY + rh/4), Offset(cX + rw/4, cY - rh/4), strokeWidth = 2f)
+            } else {
+                // Cruce o curva (Cruce Central en X)
+                drawCircle(lineColor, radius = 3f, center = Offset(cX, cY))
+                if (topH) drawLine(lineColor, Offset(cX, cY), Offset(cX + rw/4, cY - rh/4), strokeWidth = 2f)
+                if (bottomH) drawLine(lineColor, Offset(cX, cY), Offset(cX - rw/4, cY + rh/4), strokeWidth = 2f)
+                if (leftH) drawLine(lineColor, Offset(cX, cY), Offset(cX - rw/4, cY - rh/4), strokeWidth = 2f)
+                if (rightH) drawLine(lineColor, Offset(cX, cY), Offset(cX + rw/4, cY + rh/4), strokeWidth = 2f)
+            }
         }
 
         // 4. Draw Rising 3D Building structures
-        if (buildingString != null && buildingString != "ROAD") {
+        if (buildingString != null && roadConnections == null) {
             val constProgress = constructionProgress.value
             
             // Standard bounding boxes for structures
@@ -851,12 +974,22 @@ fun Isometric3DTile(
                 // Dimensions based on building type
                 val wallHeight = when (buildType) {
                     BuildingType.HOUSE -> 32f * constProgress
+                    BuildingType.SKYSCRAPER -> 85f * constProgress
                     BuildingType.FACTORY -> 44f * constProgress
                     BuildingType.COMMERCE -> 38f * constProgress
+                    BuildingType.OFFICE -> 55f * constProgress
+                    BuildingType.HOTEL -> 65f * constProgress
+                    BuildingType.BANK -> 40f * constProgress
+                    BuildingType.POLICE -> 28f * constProgress
+                    BuildingType.FIRE_STATION -> 26f * constProgress
+                    BuildingType.GOVERNMENT -> 48f * constProgress
+                    BuildingType.STADIUM -> 30f * constProgress
+                    BuildingType.COURT -> 12f * constProgress
+                    BuildingType.GOLF_COURSE -> 4f * constProgress
                     BuildingType.POWER_PLANT -> 24f * constProgress
                     BuildingType.ECOLOGIC_WATER -> 15f * constProgress
                     BuildingType.PARK -> 8f * constProgress
-                    else -> 20f
+                    else -> 20f * constProgress
                 }
 
                 val structW = rw * 0.55f
@@ -878,15 +1011,45 @@ fun Isometric3DTile(
                 val tRight = Offset(bRight.x, bRight.y - wallHeight)
                 val tTop = Offset(bTop.x, bTop.y - wallHeight)
 
-                // Shadow coordinates
-                val shadowPath = Path().apply {
-                    moveTo(bLeft.x, bLeft.y)
-                    lineTo(bCenter.x + (15f + angleOffsetValue), bCenter.y)
-                    lineTo(bRight.x + (25f + angleOffsetValue), bRight.y + 12f)
-                    lineTo(bRight.x, bRight.y)
-                    close()
+                // Realistic Ray-Traced Shadow (Gráficos Avanzados - HDRP sim)
+                if (isGraphicsAdvanced && dayProgress < 0.7f && constProgress > 0f) {
+                    val isMorning = dayProgress < 0.35f
+                    val shadowAlpha = if (dayProgress < 0.15f || dayProgress > 0.55f) 0.12f * illuminationCoefficient else 0.25f * illuminationCoefficient
+                    
+                    // Sun vector mapping based on day cycle
+                    val sunProgressX = (dayProgress - 0.35f) * 3f 
+                    val sDx = 45f * sunProgressX
+                    val sDy = Math.abs(sDx) * 0.45f
+                    
+                    val shadowPathAdvanced = Path().apply {
+                        moveTo(bLeft.x, bLeft.y)
+                        if (isMorning) {
+                            lineTo(bCenter.x, bCenter.y)
+                            lineTo(bRight.x, bRight.y)
+                            lineTo(tRight.x + sDx, tRight.y + sDy)
+                            lineTo(tTop.x + sDx, tTop.y + sDy)
+                            lineTo(tLeft.x + sDx, tLeft.y + sDy)
+                        } else {
+                            lineTo(tLeft.x + sDx, tLeft.y + sDy)
+                            lineTo(tTop.x + sDx, tTop.y + sDy)
+                            lineTo(tRight.x + sDx, tRight.y + sDy)
+                            lineTo(bRight.x, bRight.y)
+                            lineTo(bCenter.x, bCenter.y)
+                        }
+                        close()
+                    }
+                    drawPath(shadowPathAdvanced, color = Color.Black.copy(alpha = shadowAlpha * constProgress))
+                } else if (!isGraphicsAdvanced || dayProgress < 0.7f) {
+                    // Primitive simplistic shadow
+                    val shadowPath = Path().apply {
+                        moveTo(bLeft.x, bLeft.y)
+                        lineTo(bCenter.x + (15f + angleOffsetValue), bCenter.y)
+                        lineTo(bRight.x + (25f + angleOffsetValue), bRight.y + 12f)
+                        lineTo(bRight.x, bRight.y)
+                        close()
+                    }
+                    drawPath(shadowPath, color = Color.Black.copy(alpha = 0.15f * illuminationCoefficient))
                 }
-                drawPath(shadowPath, color = Color.Black.copy(alpha = 0.22f))
 
                 when (buildType) {
                     BuildingType.HOUSE -> {
@@ -1102,7 +1265,41 @@ fun Isometric3DTile(
                         drawLine(color = Color(0xFF5D4037), start = Offset(bCenter.x - 8f, bCenter.y), end = Offset(bCenter.x - 8f, bCenter.y - 10f), strokeWidth = 2.5f)
                         drawLine(color = Color(0xFF5D4037), start = Offset(bCenter.x + 10f, bCenter.y), end = Offset(bCenter.x + 10f, bCenter.y - 6f), strokeWidth = 2f)
                     }
-                    else -> {}
+                    else -> {
+                        // Generic colored block representation
+                        val leftWall = Path().apply {
+                            moveTo(bLeft.x, bLeft.y)
+                            lineTo(bCenter.x, bCenter.y)
+                            lineTo(tCenter.x, tCenter.y)
+                            lineTo(tLeft.x, tLeft.y)
+                            close()
+                        }
+                        val rightWall = Path().apply {
+                            moveTo(bCenter.x, bCenter.y)
+                            lineTo(bRight.x, bRight.y)
+                            lineTo(tRight.x, tRight.y)
+                            lineTo(tCenter.x, tCenter.y)
+                            close()
+                        }
+                        val roof = Path().apply {
+                            moveTo(tLeft.x, tLeft.y)
+                            lineTo(tCenter.x, tCenter.y)
+                            lineTo(tRight.x, tRight.y)
+                            lineTo(tTop.x, tTop.y)
+                            close()
+                        }
+                        
+                        val baseColor = try { Color(android.graphics.Color.parseColor(buildType.colorHex)) } catch (e: Exception) { Color(0xFF9E9E9E) }
+                        
+                        // Create slightly darker/lighter variants
+                        val leftColor = lerpColor(baseColor, Color.White, 0.1f)
+                        val rightColor = lerpColor(baseColor, Color.Black, 0.2f)
+                        val topColor = lerpColor(baseColor, Color.White, 0.3f)
+                        
+                        drawPath(leftWall, color = leftColor.copy(alpha = illuminationCoefficient))
+                        drawPath(rightWall, color = rightColor.copy(alpha = illuminationCoefficient))
+                        drawPath(roof, color = topColor.copy(alpha = illuminationCoefficient))
+                    }
                 }
             }
         }
@@ -1156,9 +1353,21 @@ fun findFirstUnoccupied(buildings: List<com.example.data.BuildingEntity>): Pair<
 fun get2DIcon(type: BuildingType): ImageVector {
     return when (type) {
         BuildingType.ROAD -> Icons.Default.Place
+        BuildingType.DIRT_ROAD -> Icons.Default.LocationOn
+        BuildingType.HIGHWAY -> Icons.Default.Menu
         BuildingType.HOUSE -> Icons.Default.Home
+        BuildingType.SKYSCRAPER -> Icons.Default.Home
         BuildingType.FACTORY -> Icons.Default.Build
         BuildingType.COMMERCE -> Icons.Default.ShoppingCart
+        BuildingType.OFFICE -> Icons.Default.Info
+        BuildingType.HOTEL -> Icons.Default.Star
+        BuildingType.BANK -> Icons.Default.ShoppingCart
+        BuildingType.POLICE -> Icons.Default.Lock
+        BuildingType.FIRE_STATION -> Icons.Default.Add
+        BuildingType.GOVERNMENT -> Icons.Default.AccountBox
+        BuildingType.STADIUM -> Icons.Default.Face
+        BuildingType.COURT -> Icons.Default.PlayArrow
+        BuildingType.GOLF_COURSE -> Icons.Default.Place
         BuildingType.PARK -> Icons.Default.Favorite
         BuildingType.POWER_PLANT -> Icons.Default.PlayArrow
         BuildingType.ECOLOGIC_WATER -> Icons.Default.Share
