@@ -1,6 +1,7 @@
 package com.example.ui
 
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -45,7 +46,7 @@ fun CityScreen(viewModel: CityViewModel) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val dayProgress by viewModel.dayTimeProgress.collectAsStateWithLifecycle()
     var selectedCell by remember { mutableStateOf<Pair<Int, Int>?>(null) }
-    var selectedCategory by remember { mutableStateOf("Zonas") } // Zonas, Servicios, Espacios, Opciones
+    var selectedCategory by remember { mutableStateOf("Residencial") } // Residencial, Comercial, Industrial, etc
     
     val scope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState()
@@ -82,195 +83,95 @@ fun CityScreen(viewModel: CityViewModel) {
         Brush.verticalGradient(listOf(color1, color2))
     }
 
-    // Interactive time of day label
-    val dayTimeLabel = when {
-        dayProgress < 0.2f -> "Amanecer 🌅"
-        dayProgress < 0.55f -> "Día Soleado ☀️"
-        dayProgress < 0.75f -> "Atardecer 🌇"
-        else -> "Noche Estrellada 🌙"
-    }
+    // Background color processing
 
     val isNightMode = dayProgress >= 0.75f || dayProgress < 0.1f
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.LocationOn, 
-                            contentDescription = null, 
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(end = 8.dp)
-                        )
-                        Column {
-                            Text("Constructor de Ciudades", fontSize = 18.sp, fontWeight = FontWeight.Black)
-                            Text("Simulador de Estrategia 3D", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
-                        }
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { showInfoDialog = true }) {
-                        Icon(Icons.Default.Info, contentDescription = "Manual de Juego")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp),
-                    titleContentColor = MaterialTheme.colorScheme.onSurface
-                )
-            )
-        }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .background(MaterialTheme.colorScheme.background)
-        ) {
-            // Dynamic Sky and Day-Cycle Background Panel
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(95.dp)
-                    .drawBehind {
-                        drawRect(skyBrush)
-                        // Starry night sparkles
-                        if (isNightMode) {
-                            drawStars(this)
-                        }
-                    }
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                contentAlignment = Alignment.CenterStart
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column {
-                        Text(
-                            text = "AÑO LUZ • DÍA ${uiState.day}",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp,
-                            modifier = Modifier.background(Color.Black.copy(alpha = 0.45f), RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = dayTimeLabel,
-                            color = Color.White,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.ExtraBold
-                        )
-                    }
+    var cityName by remember { mutableStateOf("Mi Ciudad de EE.UU.") }
 
-                    // Global stats pills
-                    Row {
-                        FloatingStatTicker(
-                            icon = Icons.Default.Star, 
-                            label = "Lvl ${uiState.level}", 
-                            color = Color(0xFFFFCA28)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        FloatingStatTicker(
-                            icon = Icons.Default.Favorite, 
-                            label = "${uiState.happiness}%", 
-                            color = if (uiState.happiness >= 75) Color(0xFF4CAF50) else if (uiState.happiness >= 45) Color(0xFFFFB300) else Color(0xFFF44336)
-                        )
-                    }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .drawBehind {
+                drawRect(skyBrush)
+                if (isNightMode) {
+                    drawStars(this)
                 }
             }
+    ) {
+        // Sky Overlay Fixed at Top
+        if (uiState.isGraphicsAdvanced) {
+            CloudSceneryOverlay(dayProgress)
+        }
 
-            // Stats row (Money, Population, Happiness metrics)
-            Card(
+        Column(
+            modifier = Modifier.fillMaxSize()
+        ) {
+            // Header Top Bar with Stats Only
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                    .padding(horizontal = 16.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    StatMetricColumn(
-                        icon = Icons.Default.PlayArrow,
-                        title = "Tesorería",
-                        value = "$${uiState.money}",
-                        trend = if (uiState.happiness >= 60) "+${(uiState.population * (uiState.happiness / 100f) * 1.5f).toInt()} tazas" else "Baja",
-                        goodTrend = uiState.happiness >= 60
+                // City Name Editable Area
+                BasicTextField(
+                    value = cityName,
+                    onValueChange = { cityName = it },
+                    textStyle = androidx.compose.ui.text.TextStyle(
+                        color = Color.White,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Black
+                    ),
+                    modifier = Modifier.weight(1f).padding(end = 8.dp)
+                )
+
+                // Global stats pills grouped
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    FloatingStatTicker(
+                        icon = Icons.Default.DateRange, 
+                        label = "Día ${uiState.day}", 
+                        color = Color(0xFFAB47BC)
                     )
-                    VerticalDivider(modifier = Modifier.height(35.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
-                    StatMetricColumn(
-                        icon = Icons.Default.Face,
-                        title = "Ciudadanos",
-                        value = "${uiState.population} habs",
-                        trend = "Límite: ${uiState.level * 40}",
-                        goodTrend = uiState.population < uiState.level * 40
+                    Spacer(modifier = Modifier.width(4.dp))
+                    FloatingStatTicker(
+                        icon = Icons.Default.Face, 
+                        label = "${uiState.population}", 
+                        color = Color(0xFF4FC3F7)
                     )
-                    VerticalDivider(modifier = Modifier.height(35.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
-                    StatMetricColumn(
-                        icon = Icons.Default.Warning,
-                        title = "Redes (E/A)",
-                        value = "⚡${uiState.power} 💧${uiState.water}",
-                        trend = if (uiState.power < 0 || uiState.water < 0) "Crítico" else "Estable",
-                        goodTrend = uiState.power >= 0 && uiState.water >= 0
+                    Spacer(modifier = Modifier.width(4.dp))
+                    FloatingStatTicker(
+                        icon = Icons.Default.ThumbUp, 
+                        label = "${uiState.happiness}%", 
+                        color = if (uiState.happiness >= 75) Color(0xFF4CAF50) else Color(0xFFFFB300)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    FloatingStatTicker(
+                        icon = Icons.Default.Star, 
+                        label = "Lvl ${uiState.level}", 
+                        color = Color(0xFFFFCA28)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    FloatingStatTicker(
+                        icon = Icons.Default.Warning, 
+                        label = "⚡${uiState.power} 💧${uiState.water}", 
+                        color = if (uiState.power < 0 || uiState.water < 0) Color.Red else Color.Cyan
                     )
                 }
             }
 
             // Resource Warning Banner
-            if (uiState.power < 0 || uiState.water < 0) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                        .background(MaterialTheme.colorScheme.errorContainer, RoundedCornerShape(8.dp))
-                        .padding(vertical = 6.dp, horizontal = 12.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            Icons.Default.Warning, 
-                            contentDescription = null, 
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = if (uiState.power < 0 && uiState.water < 0) {
-                                "⚠️ Déficit de Luz y Agua: Economía al 40% y felicidad reducida."
-                            } else if (uiState.power < 0) {
-                                "⚡ Falta Energía Eléctrica: Fábricas y comercios frenados."
-                            } else {
-                                "💧 Sequía en Acueductos: Residentes insatisfechos abandonando casas."
-                            },
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onErrorContainer
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(4.dp))
-            }
-
+            // Ocultado por solicitud
+            
             // The Map viewport (Scrollable container representing the floats)
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f))
-                    .border(2.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), RoundedCornerShape(16.dp))
             ) {
-                // Background cloud assets animation (advanced graphics enabled)
-                if (uiState.isGraphicsAdvanced) {
-                    CloudSceneryOverlay()
-                }
 
                 if (uiState.isIsometricMode) {
                     // Isometric 3D Viewport - Camara Panoramica
@@ -287,8 +188,8 @@ fun CityScreen(viewModel: CityViewModel) {
                             .pointerInput(Unit) {
                                 detectTransformGestures { _, pan, zoom, _ ->
                                     scale = (scale * zoom).coerceIn(minScale, maxScale)
-                                    val limitX = 2000f * scale
-                                    val limitY = 2000f * scale
+                                    val limitX = 4000f * scale
+                                    val limitY = 4000f * scale
 
                                     offsetX = (offsetX + pan.x).coerceIn(-limitX, limitX)
                                     offsetY = (offsetY + pan.y).coerceIn(-limitY, limitY)
@@ -306,13 +207,13 @@ fun CityScreen(viewModel: CityViewModel) {
                                 ),
                             contentAlignment = Alignment.Center
                         ) {
-                            // Tilted isometric block field (width: 520.dp, height: 420.dp)
+                            // Tilted isometric block field for large US map simulation
                             Box(
                                 modifier = Modifier
-                                .width(520.dp)
-                                .height(400.dp)
+                                .width(1200.dp)
+                                .height(800.dp)
                         ) {
-                            val gridSize = 6
+                            val gridSize = 14
                             // Draw back-to-front by x+y index so foreground shadows overlay background units perfectly
                             val tileSequence = remember {
                                 mutableListOf<Pair<Int, Int>>().apply {
@@ -331,9 +232,9 @@ fun CityScreen(viewModel: CityViewModel) {
                                 val building = uiState.buildings.find { it.x == x && it.y == y }
                                 
                                 // Coordinates mapping of isometric projections
-                                // centerOffset = 220.dp, spacingX = 42.1f, spacingY = 22.8f
-                                val xDp = ((x - y) * 41.5f) + 220f
-                                val yDp = ((x + y) * 23.5f) + 40f
+                                // centerOffset = 580.dp, spacingX = 41.5f, spacingY = 23.5f
+                                val xDp = ((x - y) * 41.5f) + 580f
+                                val yDp = ((x + y) * 23.5f) + 80f
 
                                 val isMyRoad = building?.type in listOf("ROAD", "DIRT_ROAD", "HIGHWAY")
                                 val roadConnections = remember(building, uiState.buildings) {
@@ -359,6 +260,7 @@ fun CityScreen(viewModel: CityViewModel) {
                                         dayProgress = dayProgress,
                                         isGraphicsAdvanced = uiState.isGraphicsAdvanced,
                                         isSelected = selectedCell == Pair(x, y),
+                                        showGridOverlay = selectedCategory.isNotEmpty() && selectedCategory != "Ajustes",
                                         roadConnections = roadConnections
                                     )
                                 }
@@ -390,7 +292,7 @@ fun CityScreen(viewModel: CityViewModel) {
 
                 } else {
                     // Modern Standard 2D Schematic matrix Map
-                    val gridSize = 6
+                    val gridSize = 14
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(gridSize),
                         contentPadding = PaddingValues(16.dp),
@@ -422,6 +324,13 @@ fun CityScreen(viewModel: CityViewModel) {
                                         color = if (selectedCell == Pair(x, y)) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
                                         shape = RoundedCornerShape(8.dp)
                                     )
+                                    // Remove run extension, just apply border modifier directly
+                                    .run {
+                                        if (selectedCategory.isNotEmpty() && selectedCategory != "Ajustes" && buildingType == null) {
+                                            // Fallback dashed border for 2D mode empty cells
+                                            this.background(Color.White.copy(alpha=0.1f))
+                                        } else this
+                                    }
                                     .clickable { selectedCell = Pair(x, y) }
                             ) {
                                 if (buildingType != null) {
@@ -442,6 +351,15 @@ fun CityScreen(viewModel: CityViewModel) {
                         }
                     }
                 }
+                
+                // HUD overlay over map
+                CityStatusHud(
+                    uiState = uiState,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                )
             }
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -460,11 +378,13 @@ fun CityScreen(viewModel: CityViewModel) {
                         modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.Start
                     ) {
-                        val categories = listOf("Zonas", "Vías", "Educativo/Salud", "Seguridad", "Gobierno/Finanzas", "Entretenimiento", "Ajustes")
+                        val categories = listOf("Residencial", "Comercial", "Industrial", "Carreteras", "Institucional", "Ocio", "Ajustes")
                         categories.forEach { cat ->
                             val isSel = selectedCategory == cat
                             TextButton(
-                                onClick = { selectedCategory = cat }
+                                onClick = { 
+                                    if (selectedCategory == cat) selectedCategory = "" else selectedCategory = cat 
+                                }
                             ) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                     Text(
@@ -488,46 +408,65 @@ fun CityScreen(viewModel: CityViewModel) {
 
                     // Content panel according to filter
                     if (selectedCategory == "Ajustes") {
-                        Row(
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(14.dp),
-                            horizontalArrangement = Arrangement.SpaceEvenly,
-                            verticalAlignment = Alignment.CenterVertically
+                                .padding(horizontal = 14.dp, vertical = 8.dp)
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("Modo 3D Isométrico", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                                Spacer(modifier = Modifier.width(6.dp))
+                            Text("Configuración Gráfica y Motor Render", fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary, fontSize = 14.sp)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Text("Modo 3D Isométrico", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                                 Switch(
                                     checked = uiState.isIsometricMode,
-                                    onCheckedChange = { viewModel.setIsometricMode(it) },
-                                    thumbContent = {
-                                        Icon(
-                                            imageVector = if (uiState.isIsometricMode) Icons.Default.Add else Icons.Default.Close,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(SwitchDefaults.IconSize)
-                                        )
-                                    }
+                                    onCheckedChange = { viewModel.setIsometricMode(it) }
                                 )
                             }
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("Gráficos Avanzados", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                                Spacer(modifier = Modifier.width(6.dp))
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Text("Calidad de Texturas (ALTA)", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                Switch(
+                                    checked = true,
+                                    onCheckedChange = { }
+                                )
+                            }
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Text("Sombras Dinámicas", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                                 Switch(
                                     checked = uiState.isGraphicsAdvanced,
                                     onCheckedChange = { viewModel.setGraphicsAdvanced(it) }
                                 )
                             }
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Text("Efectos de Luz / Iluminación", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                Switch(
+                                    checked = uiState.isGraphicsAdvanced,
+                                    onCheckedChange = { viewModel.setGraphicsAdvanced(it) }
+                                )
+                            }
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Text("Suavizado de bordes (Antialiasing)", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                Switch(
+                                    checked = true,
+                                    onCheckedChange = { }
+                                )
+                            }
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Text("Resolución de Pantalla (ALTA / ORIGINAL)", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                Switch(
+                                    checked = true,
+                                    onCheckedChange = { }
+                                )
+                            }
                         }
-                    } else {
+                    } else if (selectedCategory.isNotEmpty()) {
                         // Show list of buildable entities
                         val structuresList = when (selectedCategory) {
-                            "Zonas" -> listOf(BuildingType.HOUSE, BuildingType.SKYSCRAPER, BuildingType.COMMERCE, BuildingType.OFFICE, BuildingType.FACTORY, BuildingType.HOTEL)
-                            "Vías" -> listOf(BuildingType.DIRT_ROAD, BuildingType.ROAD, BuildingType.HIGHWAY)
-                            "Seguridad" -> listOf(BuildingType.POLICE, BuildingType.FIRE_STATION)
-                            "Gobierno/Finanzas" -> listOf(BuildingType.BANK, BuildingType.GOVERNMENT, BuildingType.POWER_PLANT, BuildingType.ECOLOGIC_WATER)
-                            "Entretenimiento" -> listOf(BuildingType.STADIUM, BuildingType.COURT, BuildingType.GOLF_COURSE, BuildingType.PARK)
+                            "Residencial" -> listOf(BuildingType.ZONE_RESIDENTIAL, BuildingType.HOUSE, BuildingType.SKYSCRAPER)
+                            "Comercial" -> listOf(BuildingType.ZONE_COMMERCIAL, BuildingType.COMMERCE, BuildingType.OFFICE, BuildingType.HOTEL)
+                            "Industrial" -> listOf(BuildingType.ZONE_INDUSTRIAL, BuildingType.FACTORY)
+                            "Carreteras" -> listOf(BuildingType.DIRT_ROAD, BuildingType.ROAD, BuildingType.HIGHWAY)
+                            "Institucional" -> listOf(BuildingType.POLICE, BuildingType.FIRE_STATION, BuildingType.BANK, BuildingType.GOVERNMENT, BuildingType.POWER_PLANT, BuildingType.ECOLOGIC_WATER)
+                            "Ocio" -> listOf(BuildingType.STADIUM, BuildingType.COURT, BuildingType.GOLF_COURSE, BuildingType.PARK)
                             else -> emptyList()
                         }
 
@@ -540,73 +479,59 @@ fun CityScreen(viewModel: CityViewModel) {
                         ) {
                             structuresList.forEach { struct ->
                                 val unlocked = uiState.level >= struct.minLevelRequired
-                                Card(
+                                Box(
                                     modifier = Modifier
-                                        .width(135.dp)
+                                        .size(60.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(if (unlocked) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.8f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
                                         .clickable {
                                             if (unlocked) {
-                                                // prompt placement instruction tips
                                                 scope.launch {
                                                     val defaultUnbuilt = findFirstUnoccupied(uiState.buildings)
                                                     if (defaultUnbuilt != null) {
                                                         viewModel.build(struct, defaultUnbuilt.first, defaultUnbuilt.second)
                                                     } else {
-                                                        // Fallback is selecting a random spot, otherwise click tile then build!
                                                         selectedCell = Pair(0, 0)
                                                     }
                                                 }
                                             }
                                         },
-                                    colors = CardDefaults.cardColors(
-                                        containerColor = if (unlocked) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) 
-                                                         else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                                    ),
-                                    border = BorderStroke(1.dp, if (unlocked) MaterialTheme.colorScheme.primary.copy(alpha = 0.25f) else Color.Transparent)
+                                    contentAlignment = Alignment.Center
                                 ) {
-                                    Column(
-                                        modifier = Modifier.padding(8.dp)
-                                    ) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                                        Icon(
+                                            imageVector = get2DIcon(struct),
+                                            contentDescription = struct.displayName,
+                                            tint = if (unlocked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                                            modifier = Modifier.size(36.dp)
+                                        )
+                                        if (!unlocked) {
                                             Text(
-                                                struct.displayName, 
-                                                fontSize = 11.sp, 
+                                                text = "Lvl ${struct.minLevelRequired}",
+                                                fontSize = 8.sp,
                                                 fontWeight = FontWeight.Bold,
-                                                maxLines = 1,
-                                                modifier = Modifier.weight(1f),
-                                                color = if (unlocked) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.outline
+                                                color = MaterialTheme.colorScheme.error
                                             )
-                                            IconButton(
-                                                onClick = { buildingTooltipDialog = struct },
-                                                modifier = Modifier.size(20.dp)
-                                            ) {
-                                                Icon(Icons.Default.Info, contentDescription = "Info", modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
-                                            }
                                         }
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Text(struct.description, fontSize = 9.sp, lineHeight = 11.sp, maxLines = 2, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        Spacer(modifier = Modifier.height(6.dp))
-                                        Row(
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
-                                            Text("S${struct.cost}", fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary)
-                                            if (!unlocked) {
-                                                Text("Lvl ${struct.minLevelRequired} 🔒", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
-                                            } else {
-                                                Text("Construir", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                                            }
-                                        }
+                                    }
+                                    if (unlocked) {
+                                        Text(
+                                            text = "$${struct.cost}",
+                                            fontSize = 8.sp,
+                                            fontWeight = FontWeight.Black,
+                                            color = Color.White,
+                                            modifier = Modifier
+                                                .align(Alignment.TopEnd)
+                                                .background(Color.Black.copy(0.6f), RoundedCornerShape(bottomStart = 4.dp))
+                                                .padding(horizontal = 2.dp)
+                                        )
                                     }
                                 }
                             }
                         }
                     }
                 }
-            }
+            } // END OF MAIN COLUMN
 
             // Sheet Menu when cell click
             if (selectedCell != null) {
@@ -801,12 +726,13 @@ fun FloatingStatTicker(icon: ImageVector, label: String, color: Color) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
-            .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(16.dp))
-            .padding(horizontal = 10.dp, vertical = 5.dp)
+            .background(Color.White.copy(alpha = 0.8f), RoundedCornerShape(20.dp))
+            .border(1.dp, Color.White, RoundedCornerShape(20.dp))
+            .padding(horizontal = 12.dp, vertical = 6.dp)
     ) {
-        Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(14.dp))
-        Spacer(modifier = Modifier.width(4.dp))
-        Text(label, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Black)
+        Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(16.dp))
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(label, color = Color(0xFF263238), fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
     }
 }
 
@@ -836,6 +762,7 @@ fun Isometric3DTile(
     dayProgress: Float,
     isGraphicsAdvanced: Boolean,
     isSelected: Boolean,
+    showGridOverlay: Boolean = false,
     roadConnections: IntArray? = null
 ) {
     // Construction Animation factor (0f rising to 1f)
@@ -863,6 +790,16 @@ fun Isometric3DTile(
         valOffset
     } else 0f
 
+    val citizenTransition = rememberInfiniteTransition(label = "citizens")
+    val citizenMoveProgress by citizenTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2500, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ), label = "walk"
+    )
+
     // Night/Windows/Glow triggers
     val isNightGlow = dayProgress >= 0.7f || dayProgress < 0.15f
     val illuminationCoefficient = when {
@@ -872,15 +809,23 @@ fun Isometric3DTile(
         else -> 0.45f // night shade ambient
     }
 
-    androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
+    val scalePop = if (buildingString != null) {
+        0.85f + (0.15f * constructionProgress.value)
+    } else 1f
+
+    androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize().graphicsLayer {
+        scaleX = scalePop
+        scaleY = scalePop
+        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0.7f)
+    }) {
         val w = size.width
         val h = size.height
         
         // Base of coordinate system inside box
         val gY = h * 0.65f
-        val gt = h * 0.08f // earth slab thickness
-        val rw = w * 0.95f // rhombus width
-        val rh = h * 0.28f // rhombus height
+        val rw = w // Make cells perfectly contiguous (width = 83dp)
+        val rh = 47f // (height = 47dp based on step 23.5f * 2)
+        val gt = 14f // ground thickness (Voxel base depth)
 
         // 1. Draw selections / Tile Highlight glow
         if (isSelected) {
@@ -894,7 +839,7 @@ fun Isometric3DTile(
             drawPath(hPath, color = Color(0xFF64B5F6).copy(alpha = 0.35f))
         }
 
-        // 2. Draw Soil/Earth 3D side foundations (Left side facet + Right side facet)
+        // 2. Draw Side Walls of the Voxel Ground base (Volumen)
         val leftSoilPath = Path().apply {
             moveTo(w / 2 - rw / 2, gY + rh / 2)
             lineTo(w / 2, gY + rh)
@@ -909,12 +854,10 @@ fun Isometric3DTile(
             lineTo(w / 2, gY + rh + gt)
             close()
         }
+        drawPath(leftSoilPath, color = Color(0xFFE0E0E0).copy(alpha = 0.8f * illuminationCoefficient))
+        drawPath(rightSoilPath, color = Color(0xFF9E9E9E).copy(alpha = 0.8f * illuminationCoefficient))
 
-        // Deep rich chocolate shading for concrete/soil 3D depth
-        drawPath(leftSoilPath, color = Color(0xFF5D4037))
-        drawPath(rightSoilPath, color = Color(0xFF4E342E))
-
-        // 3. Draw Top Ground Rhombus face
+        // 3. Draw Top Ground Rhombus face (Seamless)
         val topRhombusPath = Path().apply {
             moveTo(w / 2, gY)
             lineTo(w / 2 + rw / 2, gY + rh / 2)
@@ -923,15 +866,61 @@ fun Isometric3DTile(
             close()
         }
 
-        // Grass green or road asphalt gray base
+        // Surface base colors (Modern)
+        val isRoad = buildingString in listOf("ROAD", "DIRT_ROAD", "HIGHWAY")
+        val isZone = buildingString in listOf("ZONE_RESIDENTIAL", "ZONE_COMMERCIAL", "ZONE_INDUSTRIAL")
         val surfaceColor = when (buildingString) {
-            "ROAD" -> Color(0xFF2E3440)
-            "DIRT_ROAD" -> Color(0xFF5D4037)
-            "HIGHWAY" -> Color(0xFF1C1C1C)
-            "FACTORY" -> Color(0xFF4C566A)
-            else -> Color(0xFF48BB78) // green meadow layout
+            "ROAD", "DIRT_ROAD", "HIGHWAY" -> Color(0xFFE0E0E0) // Sidewalk/Tiles base for roads
+            "FACTORY" -> Color(0xFFCFD8DC)
+            "PARK", "GOLF_COURSE" -> Color(0xFF81C784)
+            "ZONE_RESIDENTIAL" -> Color(0xFF81C784)
+            "ZONE_COMMERCIAL" -> Color(0xFFFFF176)
+            "ZONE_INDUSTRIAL" -> Color(0xFFE57373)
+            else -> Color(0xFFAED581) // Modern light green meadow
         }
         drawPath(topRhombusPath, color = surfaceColor.copy(alpha = illuminationCoefficient))
+
+        if (showGridOverlay) {
+            drawPath(
+                path = topRhombusPath,
+                color = Color.White.copy(alpha = 0.6f),
+                style = androidx.compose.ui.graphics.drawscope.Stroke(
+                    width = 2f, 
+                    pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
+                )
+            )
+            // Draw crosshairs at corners to look more like a structural grid overlay
+            listOf(
+                Offset(w / 2, gY),
+                Offset(w / 2 + rw / 2, gY + rh / 2),
+                Offset(w / 2, gY + rh),
+                Offset(w / 2 - rw / 2, gY + rh / 2)
+            ).forEach { point ->
+                drawCircle(color = Color.White.copy(alpha = 0.8f), radius = 2.5f, center = point)
+            }
+        }
+
+        // Voxel Grass highlights on empty/green tiles
+        if (!isRoad && buildingString !in listOf("FACTORY", "ZONE_COMMERCIAL", "ZONE_INDUSTRIAL")) {
+            val grassPath = Path().apply {
+                moveTo(w / 2 - 12f, gY + rh / 2 + 5f)
+                lineTo(w / 2 + 5f, gY + rh / 2 + 12f)
+                lineTo(w / 2 + 15f, gY + rh / 2 + 4f)
+                lineTo(w / 2 - 2f, gY + rh / 2 - 3f)
+                close()
+            }
+            drawPath(grassPath, color = Color(0xFF81C784).copy(alpha = 0.8f * illuminationCoefficient))
+            
+            // Draw a few voxel trees
+            for (i in listOf(Pair(-15f, -10f), Pair(20f, 0f))) {
+                val tX = w / 2 + i.first
+                val tY = gY + rh / 2 + i.second
+                // trunk
+                drawLine(Color(0xFF795548), Offset(tX, tY), Offset(tX, tY - 8f), strokeWidth = 3f)
+                // leaves box
+                drawRect(Color(0xFF4CAF50).copy(alpha = 0.9f), topLeft = Offset(tX - 6f, tY - 18f), size = androidx.compose.ui.geometry.Size(12f, 12f))
+            }
+        }
 
         // Road separator drawing
         if (roadConnections != null) {
@@ -947,25 +936,52 @@ fun Isometric3DTile(
             
             val totalConns = roadConnections.sum()
             
-            // Dibujar lineas centrales
-            if (totalConns <= 1 || (topH && bottomH && !leftH && !rightH)) {
-                // Recta vertical
-                drawLine(lineColor, Offset(cX - rw/4, cY - rh/4), Offset(cX + rw/4, cY + rh/4), strokeWidth = 2f)
-            } else if (leftH && rightH && !topH && !bottomH) {
-                // Recta horizontal
-                drawLine(lineColor, Offset(cX - rw/4, cY + rh/4), Offset(cX + rw/4, cY - rh/4), strokeWidth = 2f)
-            } else {
-                // Cruce o curva (Cruce Central en X)
-                drawCircle(lineColor, radius = 3f, center = Offset(cX, cY))
-                if (topH) drawLine(lineColor, Offset(cX, cY), Offset(cX + rw/4, cY - rh/4), strokeWidth = 2f)
-                if (bottomH) drawLine(lineColor, Offset(cX, cY), Offset(cX - rw/4, cY + rh/4), strokeWidth = 2f)
-                if (leftH) drawLine(lineColor, Offset(cX, cY), Offset(cX - rw/4, cY - rh/4), strokeWidth = 2f)
-                if (rightH) drawLine(lineColor, Offset(cX, cY), Offset(cX + rw/4, cY + rh/4), strokeWidth = 2f)
+            // Draw Asphalt inset over sidewalk
+            val asphaltInset = 12f
+            val asphaltPath = Path().apply {
+                moveTo(w / 2, gY + asphaltInset)
+                lineTo(w / 2 + rw / 2 - asphaltInset*1.5f, gY + rh / 2)
+                lineTo(w / 2, gY + rh - asphaltInset)
+                lineTo(w / 2 - rw / 2 + asphaltInset*1.5f, gY + rh / 2)
+                close()
             }
+            drawPath(asphaltPath, color = Color(0xFF37474F).copy(alpha = 0.95f))
+
+            // Dibujar lineas centrales (Traffic marks / Crosswalks)
+            val markColor = Color.White
+            if (totalConns <= 1 || (topH && bottomH && !leftH && !rightH)) {
+                drawLine(markColor, Offset(cX - rw/5, cY - rh/5), Offset(cX + rw/5, cY + rh/5), strokeWidth = 2f, pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 10f)))
+            } else if (leftH && rightH && !topH && !bottomH) {
+                drawLine(markColor, Offset(cX - rw/5, cY + rh/5), Offset(cX + rw/5, cY - rh/5), strokeWidth = 2f, pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 10f)))
+            } else {
+                // Intersection crosswalks
+                drawRect(markColor.copy(alpha=0.6f), topLeft = Offset(cX - 6f, cY - 2f), size = androidx.compose.ui.geometry.Size(12f, 4f))
+                drawRect(markColor.copy(alpha=0.6f), topLeft = Offset(cX - 2f, cY - 6f), size = androidx.compose.ui.geometry.Size(4f, 12f))
+            }
+
+            // Draw Traffic Lights / Street lamps at corners
+            if (totalConns > 2) {
+                val lampX = cX - 10f
+                val lampY = cY + 12f
+                drawLine(Color.DarkGray, Offset(lampX, lampY), Offset(lampX, lampY - 14f), strokeWidth = 2f)
+                drawRect(Color(0xFF424242), topLeft = Offset(lampX - 2f, lampY - 18f), size = androidx.compose.ui.geometry.Size(4f, 6f))
+                drawCircle(Color.Green, radius = 1.5f, center = Offset(lampX, lampY - 16f)) // Green light
+            }
+
+            // Citizens moving autonomously on sidewalks and crosswalks (Voxel people)
+            val p1X = cX - rw/4 + (citizenMoveProgress * rw/2)
+            val p1Y = cY - rh/4 + (citizenMoveProgress * rh/2)
+            drawRect(Color(0xFFE53935), topLeft = Offset(p1X, p1Y), size = androidx.compose.ui.geometry.Size(4f, 6f)) // body
+            drawRect(Color(0xFFFFD54F), topLeft = Offset(p1X + 0.5f, p1Y - 3f), size = androidx.compose.ui.geometry.Size(3f, 3f)) // head
+            
+            val p2X = cX + rw/4 - (citizenMoveProgress * rw/2)
+            val p2Y = cY + rh/4 - (citizenMoveProgress * rh/2)
+            drawRect(Color(0xFF1E88E5), topLeft = Offset(p2X - 4f, p2Y), size = androidx.compose.ui.geometry.Size(4f, 6f)) // body
+            drawRect(Color(0xFFFFD54F), topLeft = Offset(p2X - 3.5f, p2Y - 3f), size = androidx.compose.ui.geometry.Size(3f, 3f)) // head
         }
 
         // 4. Draw Rising 3D Building structures
-        if (buildingString != null && roadConnections == null) {
+        if (buildingString != null && roadConnections == null && !isZone) {
             val constProgress = constructionProgress.value
             
             // Standard bounding boxes for structures
@@ -973,27 +989,30 @@ fun Isometric3DTile(
             if (buildType != null) {
                 // Dimensions based on building type
                 val wallHeight = when (buildType) {
-                    BuildingType.HOUSE -> 32f * constProgress
-                    BuildingType.SKYSCRAPER -> 85f * constProgress
-                    BuildingType.FACTORY -> 44f * constProgress
-                    BuildingType.COMMERCE -> 38f * constProgress
-                    BuildingType.OFFICE -> 55f * constProgress
-                    BuildingType.HOTEL -> 65f * constProgress
-                    BuildingType.BANK -> 40f * constProgress
-                    BuildingType.POLICE -> 28f * constProgress
-                    BuildingType.FIRE_STATION -> 26f * constProgress
-                    BuildingType.GOVERNMENT -> 48f * constProgress
-                    BuildingType.STADIUM -> 30f * constProgress
-                    BuildingType.COURT -> 12f * constProgress
+                    BuildingType.HOUSE -> 80f * constProgress // Tall modern apartments
+                    BuildingType.SKYSCRAPER -> 240f * constProgress // Huge glass tower
+                    BuildingType.FACTORY -> 60f * constProgress
+                    BuildingType.COMMERCE -> 70f * constProgress
+                    BuildingType.OFFICE -> 140f * constProgress
+                    BuildingType.HOTEL -> 160f * constProgress
+                    BuildingType.BANK -> 120f * constProgress
+                    BuildingType.POLICE -> 50f * constProgress
+                    BuildingType.FIRE_STATION -> 45f * constProgress
+                    BuildingType.GOVERNMENT -> 90f * constProgress
+                    BuildingType.STADIUM -> 40f * constProgress
+                    BuildingType.COURT -> 35f * constProgress
                     BuildingType.GOLF_COURSE -> 4f * constProgress
-                    BuildingType.POWER_PLANT -> 24f * constProgress
+                    BuildingType.POWER_PLANT -> 34f * constProgress
                     BuildingType.ECOLOGIC_WATER -> 15f * constProgress
                     BuildingType.PARK -> 8f * constProgress
-                    else -> 20f * constProgress
+                    else -> 40f * constProgress
                 }
 
-                val structW = rw * 0.55f
-                val structH = rh * 0.55f
+                // CSS-based grow animation scale for Residential & Commercial
+                val isGrowCat = buildingString in listOf("HOUSE", "SKYSCRAPER", "COMMERCE", "OFFICE", "HOTEL")
+                val scaleFactor = if (isGrowCat) constProgress else 1f
+                val structW = rw * 0.55f * scaleFactor
+                val structH = rh * 0.55f * scaleFactor
 
                 // Base coordinates of structure centered within tile top rhombus
                 val sbX = w / 2
@@ -1266,7 +1285,19 @@ fun Isometric3DTile(
                         drawLine(color = Color(0xFF5D4037), start = Offset(bCenter.x + 10f, bCenter.y), end = Offset(bCenter.x + 10f, bCenter.y - 6f), strokeWidth = 2f)
                     }
                     else -> {
-                        // Generic colored block representation
+                        // Custom US-style styling for specific buildings using colors
+                        val baseColor = when (buildType) {
+                            BuildingType.SKYSCRAPER -> Color(0xFF1E88E5) // Glass Blue
+                            BuildingType.HOUSE -> Color(0xFF64B5F6) // Light Glass Blue
+                            BuildingType.OFFICE -> Color(0xFF3949AB) // Dark Glass Blue
+                            BuildingType.COMMERCE -> Color(0xFF78909C) // Grey modern structure
+                            BuildingType.HOTEL -> Color(0xFFFDD835) // Elegant warm
+                            BuildingType.POLICE -> Color(0xFF1565C0) // Police Blue
+                            BuildingType.BANK -> Color(0xFF8D6E63) // Classic brick/stone
+                            BuildingType.GOVERNMENT -> Color(0xFFECEFF1) // White house style
+                            else -> try { Color(android.graphics.Color.parseColor(buildType.colorHex)) } catch (e: Exception) { Color(0xFF9E9E9E) }
+                        }
+                        
                         val leftWall = Path().apply {
                             moveTo(bLeft.x, bLeft.y)
                             lineTo(bCenter.x, bCenter.y)
@@ -1289,16 +1320,72 @@ fun Isometric3DTile(
                             close()
                         }
                         
-                        val baseColor = try { Color(android.graphics.Color.parseColor(buildType.colorHex)) } catch (e: Exception) { Color(0xFF9E9E9E) }
-                        
-                        // Create slightly darker/lighter variants
-                        val leftColor = lerpColor(baseColor, Color.White, 0.1f)
-                        val rightColor = lerpColor(baseColor, Color.Black, 0.2f)
-                        val topColor = lerpColor(baseColor, Color.White, 0.3f)
+                        // Create variants
+                        val leftColor = lerpColor(baseColor, if (buildType == BuildingType.SKYSCRAPER) Color(0xFF64B5F6) else Color.White, 0.2f)
+                        val rightColor = lerpColor(baseColor, Color.Black, 0.35f)
+                        val topColor = lerpColor(baseColor, Color.White, 0.45f)
                         
                         drawPath(leftWall, color = leftColor.copy(alpha = illuminationCoefficient))
                         drawPath(rightWall, color = rightColor.copy(alpha = illuminationCoefficient))
                         drawPath(roof, color = topColor.copy(alpha = illuminationCoefficient))
+                        
+                        // Decorate American style details
+                        if (buildType == BuildingType.POLICE) {
+                            // Police badge / star on roof or red/blue lights
+                            drawCircle(color = Color.Red, radius = 2f, center = Offset(tCenter.x - 4f, tCenter.y))
+                            drawCircle(color = Color.Blue, radius = 2f, center = Offset(tCenter.x + 4f, tCenter.y))
+                        } else if (buildType == BuildingType.HOTEL) {
+                            // Hotel marquee
+                            val marqueePath = Path().apply {
+                                moveTo(tLeft.x + 4f, tLeft.y + 10f)
+                                lineTo(tCenter.x - 2f, tCenter.y + 10f)
+                                lineTo(tCenter.x - 2f, tCenter.y + 14f)
+                                lineTo(tLeft.x + 4f, tLeft.y + 14f)
+                                close()
+                            }
+                            drawPath(marqueePath, color = Color(0xFFD32F2F))
+                        } else if (buildType == BuildingType.GOVERNMENT) {
+                            // Pillar look
+                            for (i in 1..3) {
+                                val factor = i / 4f
+                                val px = bLeft.x + (bCenter.x - bLeft.x) * factor
+                                val py = bLeft.y + (bCenter.y - bLeft.y) * factor
+                                drawLine(color = Color.Black.copy(0.3f), start = Offset(px, py), end = Offset(px, py - wallHeight), strokeWidth = 1f)
+                            }
+                        }
+
+                        // "Anti-aliasing" & Texture Highlighting (Gráficos Avanzados)
+                        if (isGraphicsAdvanced && constProgress > 0.5f) {
+                            val edgeColor = Color.White.copy(alpha = 0.45f * illuminationCoefficient)
+                            val shadeColor = Color.Black.copy(alpha = 0.35f * illuminationCoefficient)
+                            
+                            drawLine(color = edgeColor, start = tLeft, end = tCenter, strokeWidth = 1.5f)
+                            drawLine(color = edgeColor, start = tTop, end = tLeft, strokeWidth = 1.5f)
+                            drawLine(color = edgeColor, start = tLeft, end = bLeft, strokeWidth = 1.2f)
+                            
+                            drawLine(color = shadeColor, start = tCenter, end = tRight, strokeWidth = 1.2f)
+                            drawLine(color = shadeColor, start = tRight, end = tTop, strokeWidth = 1.2f)
+                            drawLine(color = shadeColor, start = tCenter, end = bCenter, strokeWidth = 1.5f)
+                            
+                            // US Style windows on office/skyscrapers 
+                            if (wallHeight > 30f) {
+                                val isGlassBuilding = buildType in listOf(BuildingType.SKYSCRAPER, BuildingType.HOUSE, BuildingType.OFFICE)
+                                val winColor = if(isGlassBuilding) Color(0xFF90CAF9).copy(alpha = 0.8f) else Color(0xFFE3F2FD).copy(alpha = 0.6f * illuminationCoefficient)
+                                val steps = if(isGlassBuilding) (wallHeight / 12f).toInt() else 4
+                                for (i in 1..steps) {
+                                    val factor = i.toFloat() / (steps + 1)
+                                    val lerpFloat = { start: Float, end: Float, f: Float -> start + (end - start) * f }
+                                    // left wall windows
+                                    val leftMidStart = Offset(lerpFloat(bLeft.x, tLeft.x, factor), lerpFloat(bLeft.y, tLeft.y, factor))
+                                    val leftMidEnd = Offset(lerpFloat(bCenter.x, tCenter.x, factor), lerpFloat(bCenter.y, tCenter.y, factor))
+                                    drawLine(color = winColor, start = leftMidStart, end = leftMidEnd, strokeWidth = if(isGlassBuilding) 1.5f else 2.5f)
+                                    // right wall windows
+                                    val rightMidStart = Offset(lerpFloat(bCenter.x, tCenter.x, factor), lerpFloat(bCenter.y, tCenter.y, factor))
+                                    val rightMidEnd = Offset(lerpFloat(bRight.x, tRight.x, factor), lerpFloat(bRight.y, tRight.y, factor))
+                                    drawLine(color = winColor, start = rightMidStart, end = rightMidEnd, strokeWidth = if(isGlassBuilding) 1.5f else 2f)
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1338,7 +1425,7 @@ fun ClosedRange<Float>.randomSafeValue(): Float {
 
 // Find empty tile on map
 fun findFirstUnoccupied(buildings: List<com.example.data.BuildingEntity>): Pair<Int, Int>? {
-    val gridSize = 6
+    val gridSize = 14
     for (x in 0 until gridSize) {
         for (y in 0 until gridSize) {
             val empty = buildings.none { it.x == x && it.y == y }
@@ -1352,35 +1439,38 @@ fun findFirstUnoccupied(buildings: List<com.example.data.BuildingEntity>): Pair<
 @Composable
 fun get2DIcon(type: BuildingType): ImageVector {
     return when (type) {
-        BuildingType.ROAD -> Icons.Default.Place
-        BuildingType.DIRT_ROAD -> Icons.Default.LocationOn
-        BuildingType.HIGHWAY -> Icons.Default.Menu
+        BuildingType.ZONE_RESIDENTIAL -> Icons.Default.AddHome
+        BuildingType.ZONE_COMMERCIAL -> Icons.Default.AddBusiness
+        BuildingType.ZONE_INDUSTRIAL -> Icons.Default.Factory
+        BuildingType.ROAD -> Icons.Default.AddRoad
+        BuildingType.DIRT_ROAD -> Icons.Default.AltRoute
+        BuildingType.HIGHWAY -> Icons.Default.DirectionsCar
         BuildingType.HOUSE -> Icons.Default.Home
-        BuildingType.SKYSCRAPER -> Icons.Default.Home
-        BuildingType.FACTORY -> Icons.Default.Build
-        BuildingType.COMMERCE -> Icons.Default.ShoppingCart
-        BuildingType.OFFICE -> Icons.Default.Info
-        BuildingType.HOTEL -> Icons.Default.Star
-        BuildingType.BANK -> Icons.Default.ShoppingCart
-        BuildingType.POLICE -> Icons.Default.Lock
-        BuildingType.FIRE_STATION -> Icons.Default.Add
-        BuildingType.GOVERNMENT -> Icons.Default.AccountBox
-        BuildingType.STADIUM -> Icons.Default.Face
-        BuildingType.COURT -> Icons.Default.PlayArrow
-        BuildingType.GOLF_COURSE -> Icons.Default.Place
-        BuildingType.PARK -> Icons.Default.Favorite
-        BuildingType.POWER_PLANT -> Icons.Default.PlayArrow
-        BuildingType.ECOLOGIC_WATER -> Icons.Default.Share
+        BuildingType.SKYSCRAPER -> Icons.Default.LocationCity
+        BuildingType.FACTORY -> Icons.Default.Factory
+        BuildingType.COMMERCE -> Icons.Default.Storefront
+        BuildingType.OFFICE -> Icons.Default.Business
+        BuildingType.HOTEL -> Icons.Default.Hotel
+        BuildingType.BANK -> Icons.Default.AccountBalance
+        BuildingType.POLICE -> Icons.Default.LocalPolice
+        BuildingType.FIRE_STATION -> Icons.Default.LocalFireDepartment
+        BuildingType.GOVERNMENT -> Icons.Default.AccountBalance
+        BuildingType.STADIUM -> Icons.Default.Stadium
+        BuildingType.COURT -> Icons.Default.SportsTennis
+        BuildingType.GOLF_COURSE -> Icons.Default.GolfCourse
+        BuildingType.PARK -> Icons.Default.Park
+        BuildingType.POWER_PLANT -> Icons.Default.ElectricMeter
+        BuildingType.ECOLOGIC_WATER -> Icons.Default.WaterDrop
     }
 }
 
-// Cartoon drifting clouds scenery modifier
+// Realistic drifting clouds, sun, and moon scenery modifier
 @Composable
-fun CloudSceneryOverlay() {
+fun CloudSceneryOverlay(dayProgress: Float) {
     val infiniteTransition = rememberInfiniteTransition(label = "clouds")
     val cloudOffset1 by infiniteTransition.animateFloat(
         initialValue = -120f,
-        targetValue = 600f,
+        targetValue = 800f,
         animationSpec = infiniteRepeatable(
             animation = tween(24000, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
@@ -1388,7 +1478,7 @@ fun CloudSceneryOverlay() {
     )
 
     val cloudOffset2 by infiniteTransition.animateFloat(
-        initialValue = 600f,
+        initialValue = 800f,
         targetValue = -120f,
         animationSpec = infiniteRepeatable(
             animation = tween(29000, easing = LinearEasing),
@@ -1397,19 +1487,118 @@ fun CloudSceneryOverlay() {
     )
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Cloud 1
-        Box(
-            modifier = Modifier
-                .offset(x = cloudOffset1.dp, y = 15.dp)
-                .size(width = 65.dp, height = 28.dp)
-                .background(Color.White.copy(alpha = 0.28f), RoundedCornerShape(12.dp))
-        )
-        // Cloud 2
-        Box(
-            modifier = Modifier
-                .offset(x = cloudOffset2.dp, y = 55.dp)
-                .size(width = 50.dp, height = 22.dp)
-                .background(Color.White.copy(alpha = 0.22f), RoundedCornerShape(10.dp))
-        )
+        // Sun logic - pixelated
+        val sunVisible = dayProgress in 0.0f..0.8f
+        if (sunVisible) {
+            // arc from left to right as day progresses from 0 to 0.75
+            val sunX = -50f + (dayProgress / 0.8f) * 800f
+            val sunY = 200f - Math.sin((dayProgress / 0.8f) * Math.PI) * 150f
+            
+            androidx.compose.foundation.Canvas(modifier = Modifier.offset(x = sunX.dp, y = sunY.dp).size(60.dp)) {
+                // Draw a pixelated circle (sun)
+                val blockSize = 10f
+                val blocks = listOf(
+                    Pair(2, 0), Pair(3, 0), 
+                    Pair(1, 1), Pair(2, 1), Pair(3, 1), Pair(4, 1),
+                    Pair(0, 2), Pair(1, 2), Pair(2, 2), Pair(3, 2), Pair(4, 2), Pair(5, 2),
+                    Pair(0, 3), Pair(1, 3), Pair(2, 3), Pair(3, 3), Pair(4, 3), Pair(5, 3),
+                    Pair(1, 4), Pair(2, 4), Pair(3, 4), Pair(4, 4),
+                    Pair(2, 5), Pair(3, 5)
+                )
+                blocks.forEach { (bx, by) ->
+                    drawRect(Color(0xFFFFEB3B), topLeft = Offset(bx * blockSize, by * blockSize), size = androidx.compose.ui.geometry.Size(blockSize, blockSize))
+                }
+            }
+        }
+
+        // Moon logic
+        val moonVisible = dayProgress > 0.65f || dayProgress < 0.2f
+        if (moonVisible) {
+            val moonProgress = if (dayProgress > 0.65f) (dayProgress - 0.65f) / 0.55f else (dayProgress + 0.35f) / 0.55f
+            val moonX = -50f + moonProgress * 800f
+            val moonY = 200f - Math.sin(moonProgress * Math.PI) * 150f
+            
+            androidx.compose.foundation.Canvas(modifier = Modifier.offset(x = moonX.dp, y = moonY.dp).size(45.dp)) {
+                val blockSize = 8f
+                val blocks = listOf(
+                    Pair(1, 0), Pair(2, 0), Pair(3, 0),
+                    Pair(0, 1), Pair(1, 1), Pair(2, 1), Pair(3, 1), Pair(4, 1),
+                    Pair(0, 2), Pair(1, 2), Pair(2, 2), Pair(3, 2), Pair(4, 2),
+                    Pair(0, 3), Pair(1, 3), Pair(2, 3), Pair(3, 3), Pair(4, 3),
+                    Pair(1, 4), Pair(2, 4), Pair(3, 4)
+                )
+                blocks.forEach { (bx, by) ->
+                    drawRect(Color.White.copy(alpha=0.9f), topLeft = Offset(bx * blockSize, by * blockSize), size = androidx.compose.ui.geometry.Size(blockSize, blockSize))
+                }
+            }
+        }
+
+        // Voxel Cloud 1
+        Box(modifier = Modifier.offset(x = cloudOffset1.dp, y = 40.dp)) {
+            Row {
+                Box(modifier = Modifier.size(30.dp, 20.dp).background(Color.White.copy(alpha=0.85f), RoundedCornerShape(2.dp)).align(Alignment.Bottom))
+                Box(modifier = Modifier.size(50.dp, 35.dp).background(Color.White.copy(alpha=0.9f), RoundedCornerShape(2.dp)).align(Alignment.Bottom))
+                Box(modifier = Modifier.size(40.dp, 25.dp).background(Color.White.copy(alpha=0.85f), RoundedCornerShape(2.dp)).align(Alignment.Bottom))
+                Box(modifier = Modifier.size(20.dp, 15.dp).background(Color.White.copy(alpha=0.8f), RoundedCornerShape(2.dp)).align(Alignment.Bottom))
+            }
+        }
+        // Voxel Cloud 2
+        Box(modifier = Modifier.offset(x = cloudOffset2.dp, y = 80.dp)) {
+            Row {
+                Box(modifier = Modifier.size(40.dp, 25.dp).background(Color.White.copy(alpha=0.85f), RoundedCornerShape(2.dp)).align(Alignment.Bottom))
+                Box(modifier = Modifier.size(60.dp, 40.dp).background(Color.White.copy(alpha=0.9f), RoundedCornerShape(2.dp)).align(Alignment.Bottom))
+                Box(modifier = Modifier.size(45.dp, 30.dp).background(Color.White.copy(alpha=0.85f), RoundedCornerShape(2.dp)).align(Alignment.Bottom))
+            }
+        }
     }
 }
+
+@Composable
+fun CityStatusHud(
+    uiState: CityUiState,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .background(Color(0xFF263238).copy(alpha = 0.85f), RoundedCornerShape(12.dp))
+            .border(2.dp, Color(0xFF455A64), RoundedCornerShape(12.dp))
+            .padding(12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Funds
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Default.ShoppingCart,
+                contentDescription = "Funds",
+                tint = Color(0xFF69F0AE),
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "$${uiState.money}",
+                color = Color.White,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Black
+            )
+        }
+        
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) {
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = "Ingresos (Taxes): +$${uiState.revenue}", 
+                    color = Color(0xFF81C784), 
+                    fontSize = 12.sp, 
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "Gastos (Construcción): -$${uiState.expenses}", 
+                    color = Color(0xFFE57373), 
+                    fontSize = 12.sp, 
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+}
+

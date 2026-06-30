@@ -25,6 +25,8 @@ data class CityUiState(
     val water: Int = 0,
     val pollution: Int = 0,
     val level: Int = 1,
+    val revenue: Int = 0,
+    val expenses: Int = 0,
     val buildings: List<BuildingEntity> = emptyList(),
     val isInitialized: Boolean = false,
     val isIsometricMode: Boolean = true,
@@ -44,6 +46,9 @@ enum class BuildingType(
     val happinessBoost: Int = 0,
     val minLevelRequired: Int = 1
 ) {
+    ZONE_RESIDENTIAL("Zona Residencial", 50, "#81C784", "Área para construcción de viviendas. Atrae población con el tiempo.", 0, 0, 0, 0, 0, 1, 1),
+    ZONE_COMMERCIAL("Zona Comercial", 80, "#FFF176", "Área para comercio y tiendas. Genera empleos y dinero.", 0, 0, 0, 5, 1, 2, 1),
+    ZONE_INDUSTRIAL("Zona Industrial", 100, "#E57373", "Área para fábricas. Genera mucho dinero pero contamina.", 0, 0, 0, 15, 5, -2, 1),
     DIRT_ROAD("Camino", 5, "#795548", "Pista de tierra básica rural.", 0, 0, 0, 0, 0, 0, 1),
     ROAD("Carretera", 10, "#555555", "Camino para transporte. Conecta zonas urbanas.", 0, 0, 0, 0, 0, 0, 1),
     HIGHWAY("Autopista", 30, "#424242", "Vía rápida pavimentada y ancha.", 0, 0, 0, 0, 1, 0, 2),
@@ -100,6 +105,8 @@ class CityViewModel(private val repository: CityRepository) : ViewModel() {
                 water = state.water,
                 pollution = state.pollution,
                 level = state.level,
+                revenue = state.revenue,
+                expenses = state.expenses,
                 buildings = buildings,
                 isInitialized = initialized,
                 isIsometricMode = iso,
@@ -160,6 +167,19 @@ class CityViewModel(private val repository: CityRepository) : ViewModel() {
                     var commerceCount = 0
                     var parkCount = 0
                     var houseCount = 0
+                    var residentialZoneCount = 0
+                    var commZoneCount = 0
+                    var indZoneCount = 0
+                    
+                    val hasRoadAccess = { x: Int, y: Int ->
+                        activeBuildings.any {
+                            ((it.x == x - 1 && it.y == y) ||
+                             (it.x == x + 1 && it.y == y) ||
+                             (it.x == x && it.y == y - 1) ||
+                             (it.x == x && it.y == y + 1)) &&
+                            (it.type == "ROAD" || it.type == "DIRT_ROAD" || it.type == "HIGHWAY")
+                        }
+                    }
                     
                     for (b in activeBuildings) {
                         val type = try { BuildingType.valueOf(b.type) } catch (e: Exception) { null } ?: continue
@@ -168,22 +188,23 @@ class CityViewModel(private val repository: CityRepository) : ViewModel() {
                         totalPopulation += type.popProvide
                         netPollution += type.pollutionProduce
                         
+                        val connected = hasRoadAccess(b.x, b.y)
+                        
                         when (type) {
                             BuildingType.FACTORY -> factoryCount++
                             BuildingType.COMMERCE -> commerceCount++
                             BuildingType.PARK -> parkCount++
                             BuildingType.HOUSE -> houseCount++
+                            BuildingType.ZONE_RESIDENTIAL -> if (connected) residentialZoneCount++
+                            BuildingType.ZONE_COMMERCIAL -> if (connected) commZoneCount++
+                            BuildingType.ZONE_INDUSTRIAL -> if (connected) indZoneCount++
                             else -> {}
                         }
                     }
                     
                     // 2. Resource Requirements & Constraints check
                     val energyDemand = activeBuildings.size * 5
-                    var waterDemand = 0
-                    for (b in activeBuildings) {
-                        val type = try { BuildingType.valueOf(b.type) } catch (e: Exception) { null } ?: continue
-                        if (type.popProvide > 0) waterDemand += (type.popProvide * 0.8).toInt()
-                    }
+                    var waterDemand = (currentState.population * 0.8).toInt()
                     
                     val powerShortage = totalPowerProvided < energyDemand
                     val waterShortage = totalWaterProvided < waterDemand
@@ -192,12 +213,13 @@ class CityViewModel(private val repository: CityRepository) : ViewModel() {
                     var baseHappiness = 85
                     
                     // Boosts
-                    baseHappiness += commerceCount * 5
+                    baseHappiness += (commerceCount + commZoneCount) * 5
                     baseHappiness += parkCount * 10
                     
                     // Penalties
-                    if (netPollution > 0) {
-                        baseHappiness -= (netPollution * 1.2f).toInt()
+                    val totalPollution = netPollution + (indZoneCount * 8)
+                    if (totalPollution > 0) {
+                        baseHappiness -= (totalPollution * 1.2f).toInt()
                     }
                     if (powerShortage) {
                         baseHappiness -= 25
@@ -214,7 +236,20 @@ class CityViewModel(private val repository: CityRepository) : ViewModel() {
                     
                     // If happy, people flock to residents. If sad, population drops (capacity decreases).
                     val happinessScale = calculatedHappiness / 100.0f
-                    val currentPop = (totalPopulation * (0.4f + 0.6f * happinessScale)).toInt()
+                    
+                    // Capacity includes static buildings + potential from zones
+                    val maxCapacity = totalPopulation + (residentialZoneCount * 50)
+                    val baseTargetPop = (maxCapacity * (0.4f + 0.6f * happinessScale)).toInt()
+                    
+                    // Population growth per tick based on Residential Zones and happiness
+                    val popGrowth = if (calculatedHappiness > 40) {
+                        (residentialZoneCount * 2 * happinessScale).toInt() + (if (currentState.population < baseTargetPop) 1 else 0) // natural slight growth if under target
+                    } else {
+                        -((2 + residentialZoneCount) * (1.0f - happinessScale)).toInt() // decline
+                    }
+                    
+                    // Target population depends on capacity, but we ease towards it with zones
+                    val currentPop = (currentState.population + popGrowth).coerceIn(0, baseTargetPop)
                     
                     // 4. Dynamic Revenue calculation
                     var defaultRevenue = 0
@@ -222,6 +257,8 @@ class CityViewModel(private val repository: CityRepository) : ViewModel() {
                         val type = try { BuildingType.valueOf(b.type) } catch (e: Exception) { null } ?: continue
                         defaultRevenue += type.revenueProvide
                     }
+                    defaultRevenue += (commZoneCount * 5) + (indZoneCount * 15)
+                    
                     // Population pays taxes based on overall satisfaction
                     val taxesCollected = (currentPop * 2f * happinessScale).toInt()
                     var netIncome = defaultRevenue + taxesCollected
@@ -247,8 +284,10 @@ class CityViewModel(private val repository: CityRepository) : ViewModel() {
                         happiness = calculatedHappiness,
                         power = totalPowerProvided - energyDemand,
                         water = totalWaterProvided - waterDemand,
-                        pollution = netPollution.coerceAtLeast(0),
-                        level = calculatedLevel
+                        pollution = totalPollution.coerceAtLeast(0),
+                        level = calculatedLevel,
+                        revenue = currentState.revenue + netIncome,
+                        expenses = currentState.expenses
                     )
                     repository.updateState(newState)
                 }
@@ -274,7 +313,9 @@ class CityViewModel(private val repository: CityRepository) : ViewModel() {
                         power = state.power,
                         water = state.water,
                         pollution = state.pollution,
-                        level = state.level
+                        level = state.level,
+                        revenue = state.revenue,
+                        expenses = state.expenses + type.cost
                     )
                 )
                 repository.insertBuilding(BuildingEntity(type = type.name, x = x, y = y))

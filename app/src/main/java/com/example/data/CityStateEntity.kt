@@ -13,5 +13,7 @@ data class CityStateEntity(
     val power: Int = 0,
     val water: Int = 0,
     val pollution: Int = 0,
-    val level: Int = 1
+    val level: Int = 1,
+    val revenue: Int = 0,
+    val expenses: Int = 0
 )
