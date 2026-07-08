@@ -44,9 +44,11 @@ import kotlinx.coroutines.launch
 @Composable
 fun CityScreen(viewModel: CityViewModel) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val events by viewModel.events.collectAsStateWithLifecycle()
     val dayProgress by viewModel.dayTimeProgress.collectAsStateWithLifecycle()
     var selectedCell by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     var selectedCategory by remember { mutableStateOf("Residencial") } // Residencial, Comercial, Industrial, etc
+    var showDensityOverlay by remember { mutableStateOf(false) }
     
     val scope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState()
@@ -173,179 +175,125 @@ fun CityScreen(viewModel: CityViewModel) {
                     .fillMaxWidth()
             ) {
 
-                if (uiState.isIsometricMode) {
-                    // Isometric 3D Viewport - Camara Panoramica
-                    var scale by remember { mutableFloatStateOf(0.8f) }
-                    var offsetX by remember { mutableFloatStateOf(0f) }
-                    var offsetY by remember { mutableFloatStateOf(0f) }
-                    
-                    val minScale = 0.3f
-                    val maxScale = 3f
+                // Vista Cenital (Top-Down Horizontal) - 20x15
+                var scale by remember { mutableFloatStateOf(1.0f) }
+                var offsetX by remember { mutableFloatStateOf(0f) }
+                var offsetY by remember { mutableFloatStateOf(0f) }
+                
+                val minScale = 0.5f
+                val maxScale = 4f
+                val gridCols = 20
+                val gridRows = 15
+                val cellSize = 60.dp
 
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color(0xFFF5F5F5)) // Background for canvas
+                        .pointerInput(Unit) {
+                            detectTransformGestures { _, pan, zoom, _ ->
+                                scale = (scale * zoom).coerceIn(minScale, maxScale)
+                                val limitX = 2000f * scale
+                                val limitY = 2000f * scale
+
+                                offsetX = (offsetX + pan.x).coerceIn(-limitX, limitX)
+                                offsetY = (offsetY + pan.y).coerceIn(-limitY, limitY)
+                            }
+                        }
+                ) {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .pointerInput(Unit) {
-                                detectTransformGestures { _, pan, zoom, _ ->
-                                    scale = (scale * zoom).coerceIn(minScale, maxScale)
-                                    val limitX = 4000f * scale
-                                    val limitY = 4000f * scale
-
-                                    offsetX = (offsetX + pan.x).coerceIn(-limitX, limitX)
-                                    offsetY = (offsetY + pan.y).coerceIn(-limitY, limitY)
-                                }
-                            }
+                            .graphicsLayer(
+                                scaleX = scale,
+                                scaleY = scale,
+                                translationX = offsetX,
+                                translationY = offsetY
+                            ),
+                        contentAlignment = Alignment.Center
                     ) {
                         Box(
                             modifier = Modifier
-                                .fillMaxSize()
-                                .graphicsLayer(
-                                    scaleX = scale,
-                                    scaleY = scale,
-                                    translationX = offsetX,
-                                    translationY = offsetY
-                                ),
-                            contentAlignment = Alignment.Center
+                                .width(cellSize * gridCols)
+                                .height(cellSize * gridRows)
+                                .background(Color(0xFFC8E6C9)) // Verde claro para terreno vacío
+                                .border(1.dp, Color.Black.copy(alpha=0.3f))
                         ) {
-                            // Tilted isometric block field for large US map simulation
-                            Box(
-                                modifier = Modifier
-                                .width(1200.dp)
-                                .height(800.dp)
-                        ) {
-                            val gridSize = 14
-                            // Draw back-to-front by x+y index so foreground shadows overlay background units perfectly
-                            val tileSequence = remember {
-                                mutableListOf<Pair<Int, Int>>().apply {
-                                    for (diagonalSum in 0..(2 * (gridSize - 1))) {
-                                        for (x in 0 until gridSize) {
-                                            val y = diagonalSum - x
-                                            if (y in 0 until gridSize) {
-                                                add(Pair(x, y))
+                            for (y in 0 until gridRows) {
+                                for (x in 0 until gridCols) {
+                                    val building = uiState.buildings.find { it.x == x && it.y == y }
+                                    val buildingType = building?.let {
+                                        try { BuildingType.valueOf(it.type) } catch (e: Exception) { null }
+                                    }
+
+                                    // Calculate local population density in 2D
+                                    val density = remember(x, y, uiState.buildings) {
+                                        var score = 0f
+                                        for (b in uiState.buildings) {
+                                            val dist = kotlin.math.abs(b.x - x) + kotlin.math.abs(b.y - y)
+                                            if (dist <= 1) {
+                                                val weight = when (b.type) {
+                                                    "SKYSCRAPER" -> 200f
+                                                    "HOUSE" -> 20f
+                                                    "ZONE_RESIDENTIAL" -> 10f
+                                                    else -> 0f
+                                                }
+                                                val factor = if (dist == 0) 1.0f else 0.5f
+                                                score += weight * factor
                                             }
                                         }
+                                        (score / 250f).coerceIn(0f, 1f)
                                     }
-                                }
-                            }
 
-                            tileSequence.forEach { (x, y) ->
-                                val building = uiState.buildings.find { it.x == x && it.y == y }
-                                
-                                // Coordinates mapping of isometric projections
-                                // centerOffset = 580.dp, spacingX = 41.5f, spacingY = 23.5f
-                                val xDp = ((x - y) * 41.5f) + 580f
-                                val yDp = ((x + y) * 23.5f) + 80f
-
-                                val isMyRoad = building?.type in listOf("ROAD", "DIRT_ROAD", "HIGHWAY")
-                                val roadConnections = remember(building, uiState.buildings) {
-                                    if (isMyRoad) {
-                                        val hasTop = uiState.buildings.any { it.x == x && it.y == y - 1 && it.type in listOf("ROAD", "DIRT_ROAD", "HIGHWAY") }
-                                        val hasBottom = uiState.buildings.any { it.x == x && it.y == y + 1 && it.type in listOf("ROAD", "DIRT_ROAD", "HIGHWAY") }
-                                        val hasLeft = uiState.buildings.any { it.x == x - 1 && it.y == y && it.type in listOf("ROAD", "DIRT_ROAD", "HIGHWAY") }
-                                        val hasRight = uiState.buildings.any { it.x == x + 1 && it.y == y && it.type in listOf("ROAD", "DIRT_ROAD", "HIGHWAY") }
-                                        intArrayOf(if(hasTop) 1 else 0, if(hasRight) 1 else 0, if(hasBottom) 1 else 0, if(hasLeft) 1 else 0)
-                                    } else null
-                                }
-
-                                Box(
-                                    modifier = Modifier
-                                        .offset(x = xDp.dp, y = yDp.dp)
-                                        .size(width = 83.dp, height = 115.dp)
-                                        .clickable {
-                                            selectedCell = Pair(x, y)
+                                    val cellBgColor = if (showDensityOverlay && density > 0f) {
+                                        when {
+                                            density < 0.2f -> Color(0xFF81C784).copy(alpha = 0.5f) // Light Green
+                                            density < 0.5f -> Color(0xFFFFB74D).copy(alpha = 0.75f) // Orange
+                                            density < 0.8f -> Color(0xFFF06292).copy(alpha = 0.85f) // Deep Pink
+                                            else -> Color(0xFFE91E63).copy(alpha = 0.95f) // Vibrant Magenta
                                         }
-                                ) {
-                                    Isometric3DTile(
-                                        buildingString = building?.type,
-                                        dayProgress = dayProgress,
-                                        isGraphicsAdvanced = uiState.isGraphicsAdvanced,
-                                        isSelected = selectedCell == Pair(x, y),
-                                        showGridOverlay = selectedCategory.isNotEmpty() && selectedCategory != "Ajustes",
-                                        roadConnections = roadConnections
-                                    )
-                                }
-                            }
-                        }
-                        }
-                    }
+                                    } else if (buildingType != null) {
+                                        Color(android.graphics.Color.parseColor(buildingType.colorHex))
+                                    } else {
+                                        Color.Transparent
+                                    }
 
-                    // Volumetric Fog Overlay (Gráficos Avanzados - HDRP sim)
-                    if (uiState.isGraphicsAdvanced) {
-                        val fogColor = when {
-                            dayProgress < 0.2f -> Color(0xFFFF9E79).copy(alpha = 0.15f)
-                            dayProgress < 0.55f -> Color.White.copy(alpha = 0.05f)
-                            dayProgress < 0.75f -> Color(0xFF9C27B0).copy(alpha = 0.15f)
-                            else -> Color(0xFF0A0E17).copy(alpha = 0.35f)
-                        }
-                        
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(
-                                    Brush.radialGradient(
-                                        colors = listOf(Color.Transparent, fogColor),
-                                        radius = 600f
-                                    )
-                                )
-                        )
-                    }
-
-                } else {
-                    // Modern Standard 2D Schematic matrix Map
-                    val gridSize = 14
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(gridSize),
-                        contentPadding = PaddingValues(16.dp),
-                        modifier = Modifier.fillMaxWidth().wrapContentHeight()
-                    ) {
-                        items(gridSize * gridSize) { index ->
-                            val x = index % gridSize
-                            val y = index / gridSize
-                            val building = uiState.buildings.find { it.x == x && it.y == y }
-                            val buildingType = building?.let {
-                                try { BuildingType.valueOf(it.type) } catch (e: Exception) { null }
-                            }
-
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier
-                                    .aspectRatio(1f)
-                                    .padding(4.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier
+                                            .offset(x = cellSize * x, y = cellSize * y)
+                                            .size(cellSize)
+                                            .background(cellBgColor)
+                                            .border(
+                                                width = if (selectedCell == Pair(x, y)) 3.dp else 0.5.dp,
+                                                color = if (selectedCell == Pair(x, y)) MaterialTheme.colorScheme.primary else Color.Black.copy(alpha = 0.15f)
+                                            )
+                                            .clickable { selectedCell = Pair(x, y) }
+                                    ) {
                                         if (buildingType != null) {
-                                            Color(android.graphics.Color.parseColor(buildingType.colorHex))
-                                        } else {
-                                            MaterialTheme.colorScheme.surfaceVariant
+                                            Icon(
+                                                imageVector = get2DIcon(buildingType),
+                                                contentDescription = buildingType.displayName,
+                                                tint = Color.White.copy(alpha = 0.9f),
+                                                modifier = Modifier.size(32.dp)
+                                            )
                                         }
-                                    )
-                                    .border(
-                                        width = if (selectedCell == Pair(x, y)) 3.dp else 1.dp,
-                                        color = if (selectedCell == Pair(x, y)) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-                                        shape = RoundedCornerShape(8.dp)
-                                    )
-                                    // Remove run extension, just apply border modifier directly
-                                    .run {
-                                        if (selectedCategory.isNotEmpty() && selectedCategory != "Ajustes" && buildingType == null) {
-                                            // Fallback dashed border for 2D mode empty cells
-                                            this.background(Color.White.copy(alpha=0.1f))
-                                        } else this
+
+                                        if (density > 0f) {
+                                            val densityColor = when {
+                                                density < 0.2f -> Color(0xFF4FC3F7)
+                                                density < 0.5f -> Color(0xFFFFB74D)
+                                                else -> Color(0xFFFF4081)
+                                            }
+                                            Box(
+                                                modifier = Modifier
+                                                    .align(Alignment.TopStart)
+                                                    .padding(4.dp)
+                                                    .size(6.dp)
+                                                    .background(densityColor, CircleShape)
+                                            )
+                                        }
                                     }
-                                    .clickable { selectedCell = Pair(x, y) }
-                            ) {
-                                if (buildingType != null) {
-                                    Icon(
-                                        imageVector = get2DIcon(buildingType),
-                                        contentDescription = buildingType.displayName,
-                                        tint = Color.White,
-                                        modifier = Modifier.size(24.dp)
-                                    )
-                                } else {
-                                    Text(
-                                        "${x},${y}", 
-                                        fontSize = 8.sp, 
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                                    )
                                 }
                             }
                         }
@@ -358,8 +306,66 @@ fun CityScreen(viewModel: CityViewModel) {
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .fillMaxWidth()
-                        .padding(16.dp)
                 )
+
+                // Financial Panel Overlay
+                FinancialPanel(
+                    uiState = uiState,
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(end = 16.dp)
+                )
+
+                // Event Logs Notifications Overlay
+                EventLogOverlay(
+                    events = events,
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(start = 16.dp, top = 90.dp) // Below HUD
+                        .widthIn(max = 250.dp)
+                )
+
+                // Floating Density Layer Control
+                Card(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(16.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color(0xFF263238).copy(alpha = 0.85f),
+                        contentColor = Color.White
+                    ),
+                    border = BorderStroke(1.5.dp, Color(0xFF455A64))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Layers,
+                            contentDescription = "Capa de Densidad",
+                            tint = if (showDensityOverlay) Color(0xFFFF4081) else Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            text = "Mapa de Densidad",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Switch(
+                            checked = showDensityOverlay,
+                            onCheckedChange = { showDensityOverlay = it },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color(0xFFFF4081),
+                                checkedTrackColor = Color(0xFFFF4081).copy(alpha = 0.4f),
+                                uncheckedThumbColor = Color.LightGray,
+                                uncheckedTrackColor = Color.Gray.copy(alpha = 0.5f)
+                            ),
+                            modifier = Modifier.graphicsLayer(scaleX = 0.8f, scaleY = 0.8f)
+                        )
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -378,7 +384,7 @@ fun CityScreen(viewModel: CityViewModel) {
                         modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.Start
                     ) {
-                        val categories = listOf("Residencial", "Comercial", "Industrial", "Carreteras", "Institucional", "Ocio", "Ajustes")
+                        val categories = listOf("RESIDENCIAL", "COMERCIAL", "INDUSTRIAL", "CARRETERAS", "INSTITUCIONES", "AJUSTES")
                         categories.forEach { cat ->
                             val isSel = selectedCategory == cat
                             TextButton(
@@ -407,7 +413,7 @@ fun CityScreen(viewModel: CityViewModel) {
                     }
 
                     // Content panel according to filter
-                    if (selectedCategory == "Ajustes") {
+                    if (selectedCategory == "AJUSTES") {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -461,12 +467,11 @@ fun CityScreen(viewModel: CityViewModel) {
                     } else if (selectedCategory.isNotEmpty()) {
                         // Show list of buildable entities
                         val structuresList = when (selectedCategory) {
-                            "Residencial" -> listOf(BuildingType.ZONE_RESIDENTIAL, BuildingType.HOUSE, BuildingType.SKYSCRAPER)
-                            "Comercial" -> listOf(BuildingType.ZONE_COMMERCIAL, BuildingType.COMMERCE, BuildingType.OFFICE, BuildingType.HOTEL)
-                            "Industrial" -> listOf(BuildingType.ZONE_INDUSTRIAL, BuildingType.FACTORY)
-                            "Carreteras" -> listOf(BuildingType.DIRT_ROAD, BuildingType.ROAD, BuildingType.HIGHWAY)
-                            "Institucional" -> listOf(BuildingType.POLICE, BuildingType.FIRE_STATION, BuildingType.BANK, BuildingType.GOVERNMENT, BuildingType.POWER_PLANT, BuildingType.ECOLOGIC_WATER)
-                            "Ocio" -> listOf(BuildingType.STADIUM, BuildingType.COURT, BuildingType.GOLF_COURSE, BuildingType.PARK)
+                            "RESIDENCIAL" -> listOf(BuildingType.ZONE_RESIDENTIAL, BuildingType.HOUSE, BuildingType.SKYSCRAPER)
+                            "COMERCIAL" -> listOf(BuildingType.ZONE_COMMERCIAL, BuildingType.COMMERCE, BuildingType.OFFICE, BuildingType.HOTEL)
+                            "INDUSTRIAL" -> listOf(BuildingType.ZONE_INDUSTRIAL, BuildingType.FACTORY)
+                            "CARRETERAS" -> listOf(BuildingType.DIRT_ROAD, BuildingType.ROAD, BuildingType.HIGHWAY)
+                            "INSTITUCIONES" -> listOf(BuildingType.POLICE, BuildingType.FIRE_STATION, BuildingType.BANK, BuildingType.GOVERNMENT, BuildingType.POWER_PLANT, BuildingType.ECOLOGIC_WATER, BuildingType.STADIUM, BuildingType.COURT, BuildingType.GOLF_COURSE, BuildingType.PARK)
                             else -> emptyList()
                         }
 
@@ -763,7 +768,9 @@ fun Isometric3DTile(
     isGraphicsAdvanced: Boolean,
     isSelected: Boolean,
     showGridOverlay: Boolean = false,
-    roadConnections: IntArray? = null
+    roadConnections: IntArray? = null,
+    density: Float = 0f,
+    showDensityOverlay: Boolean = false
 ) {
     // Construction Animation factor (0f rising to 1f)
     var key by remember(buildingString) { mutableStateOf(0) }
@@ -869,7 +876,7 @@ fun Isometric3DTile(
         // Surface base colors (Modern)
         val isRoad = buildingString in listOf("ROAD", "DIRT_ROAD", "HIGHWAY")
         val isZone = buildingString in listOf("ZONE_RESIDENTIAL", "ZONE_COMMERCIAL", "ZONE_INDUSTRIAL")
-        val surfaceColor = when (buildingString) {
+        val baseSurfaceColor = when (buildingString) {
             "ROAD", "DIRT_ROAD", "HIGHWAY" -> Color(0xFFE0E0E0) // Sidewalk/Tiles base for roads
             "FACTORY" -> Color(0xFFCFD8DC)
             "PARK", "GOLF_COURSE" -> Color(0xFF81C784)
@@ -878,7 +885,45 @@ fun Isometric3DTile(
             "ZONE_INDUSTRIAL" -> Color(0xFFE57373)
             else -> Color(0xFFAED581) // Modern light green meadow
         }
-        drawPath(topRhombusPath, color = surfaceColor.copy(alpha = illuminationCoefficient))
+
+        val surfaceColor = if (showDensityOverlay && density > 0f) {
+            when {
+                density < 0.2f -> Color(0xFF81C784).copy(alpha = 0.5f) // Light Green
+                density < 0.5f -> Color(0xFFFFB74D).copy(alpha = 0.75f) // Orange
+                density < 0.8f -> Color(0xFFF06292).copy(alpha = 0.85f) // Deep Pink
+                else -> Color(0xFFE91E63).copy(alpha = 0.95f) // Vibrant Magenta
+            }
+        } else {
+            baseSurfaceColor.copy(alpha = illuminationCoefficient)
+        }
+        drawPath(topRhombusPath, color = surfaceColor)
+
+        // 3b. Population density glowing indicator (Aura & Ring of Influence)
+        if (density > 0f && !isRoad) {
+            val auraColor = when {
+                density < 0.2f -> Color(0xFF4FC3F7).copy(alpha = 0.18f * illuminationCoefficient) // Cyan
+                density < 0.5f -> Color(0xFFFFB74D).copy(alpha = 0.28f * illuminationCoefficient) // Orange
+                else -> Color(0xFFFF4081).copy(alpha = 0.42f * illuminationCoefficient) // Vibrant Pink/Red
+            }
+            
+            // Inner soft glowing circle
+            drawCircle(
+                color = auraColor,
+                radius = (rw * 0.18f + rw * 0.25f * density),
+                center = Offset(w / 2, gY + rh / 2)
+            )
+            
+            // Outer dashed ring of influence
+            drawCircle(
+                color = auraColor.copy(alpha = auraColor.alpha * 0.4f),
+                radius = (rw * 0.32f + rw * 0.22f * density),
+                center = Offset(w / 2, gY + rh / 2),
+                style = androidx.compose.ui.graphics.drawscope.Stroke(
+                    width = 1.8f,
+                    pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(6f, 6f), 0f)
+                )
+            )
+        }
 
         if (showGridOverlay) {
             drawPath(
@@ -1425,9 +1470,10 @@ fun ClosedRange<Float>.randomSafeValue(): Float {
 
 // Find empty tile on map
 fun findFirstUnoccupied(buildings: List<com.example.data.BuildingEntity>): Pair<Int, Int>? {
-    val gridSize = 14
-    for (x in 0 until gridSize) {
-        for (y in 0 until gridSize) {
+    val gridCols = 20
+    val gridRows = 15
+    for (x in 0 until gridCols) {
+        for (y in 0 until gridRows) {
             val empty = buildings.none { it.x == x && it.y == y }
             if (empty) return Pair(x, y)
         }
@@ -1558,45 +1604,98 @@ fun CityStatusHud(
     uiState: CityUiState,
     modifier: Modifier = Modifier
 ) {
+    val energiaStr = if (uiState.power >= 0) "100%" else "${(100 - (-uiState.power * 2)).coerceAtLeast(0)}%"
+    val estadoStr = if (uiState.happiness > 70) "NORMAL" else if (uiState.happiness > 40) "ALERTA" else "CRÍTICO"
+
     Row(
         modifier = modifier
-            .background(Color(0xFF263238).copy(alpha = 0.85f), RoundedCornerShape(12.dp))
-            .border(2.dp, Color(0xFF455A64), RoundedCornerShape(12.dp))
-            .padding(12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
+            .background(Color(0xFF1E1E1E))
+            .padding(vertical = 12.dp, horizontal = 16.dp),
+        horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Funds
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                imageVector = Icons.Default.ShoppingCart,
-                contentDescription = "Funds",
-                tint = Color(0xFF69F0AE),
-                modifier = Modifier.size(24.dp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = "$${uiState.money}",
-                color = Color.White,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Black
-            )
-        }
-        
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) {
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    text = "Ingresos (Taxes): +$${uiState.revenue}", 
-                    color = Color(0xFF81C784), 
-                    fontSize = 12.sp, 
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "Gastos (Construcción): -$${uiState.expenses}", 
-                    color = Color(0xFFE57373), 
-                    fontSize = 12.sp, 
-                    fontWeight = FontWeight.Bold
-                )
+        Text(
+            text = "DÍA ${uiState.day} | ESTADO: $estadoStr | NIVEL ${uiState.level} | RECURSOS: $${uiState.money} | ENERGÍA: $energiaStr",
+            color = Color.White,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1
+        )
+    }
+}
+
+@Composable
+fun FinancialPanel(
+    uiState: CityUiState,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .background(Color(0xFFE0E0E0), RoundedCornerShape(8.dp))
+            .border(1.dp, Color.Gray, RoundedCornerShape(8.dp))
+            .padding(16.dp),
+        horizontalAlignment = Alignment.Start
+    ) {
+        Text("PANEL FINANCIERO", fontWeight = FontWeight.Black, fontSize = 12.sp, color = Color(0xFF424242))
+        Spacer(modifier = Modifier.height(8.dp))
+        Text("INGRESOS: $${uiState.revenue}/mes", color = Color(0xFF2E7D32), fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(4.dp))
+        Text("GASTOS: $${uiState.expenses}/mes", color = Color(0xFFC62828), fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        Divider(modifier = Modifier.padding(vertical = 8.dp), color = Color.Gray)
+        Text("SALDO TOTAL: $${uiState.money}", color = Color.Black, fontSize = 16.sp, fontWeight = FontWeight.Black)
+    }
+}
+
+@Composable
+fun EventLogOverlay(
+    events: List<CityEvent>,
+    modifier: Modifier = Modifier
+) {
+    // Only show the 5 most recent events
+    val recentEvents = events.take(5)
+    
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        recentEvents.forEach { event ->
+            val bgColor = when (event.type) {
+                EventType.INFO -> Color(0xFF2196F3)
+                EventType.SUCCESS -> Color(0xFF4CAF50)
+                EventType.WARNING -> Color(0xFFFF9800)
+                EventType.DANGER -> Color(0xFFF44336)
+            }
+            Card(
+                shape = RoundedCornerShape(8.dp),
+                colors = CardDefaults.cardColors(containerColor = bgColor.copy(alpha = 0.95f)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+                modifier = Modifier.padding(bottom = 2.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val icon = when (event.type) {
+                        EventType.INFO -> Icons.Default.Info
+                        EventType.SUCCESS -> Icons.Default.CheckCircle
+                        EventType.WARNING -> Icons.Default.Warning
+                        EventType.DANGER -> Icons.Default.Warning
+                    }
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = event.message,
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        lineHeight = 14.sp
+                    )
+                }
             }
         }
     }

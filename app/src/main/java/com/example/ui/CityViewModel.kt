@@ -46,16 +46,16 @@ enum class BuildingType(
     val happinessBoost: Int = 0,
     val minLevelRequired: Int = 1
 ) {
-    ZONE_RESIDENTIAL("Zona Residencial", 50, "#81C784", "Área para construcción de viviendas. Atrae población con el tiempo.", 0, 0, 0, 0, 0, 1, 1),
-    ZONE_COMMERCIAL("Zona Comercial", 80, "#FFF176", "Área para comercio y tiendas. Genera empleos y dinero.", 0, 0, 0, 5, 1, 2, 1),
-    ZONE_INDUSTRIAL("Zona Industrial", 100, "#E57373", "Área para fábricas. Genera mucho dinero pero contamina.", 0, 0, 0, 15, 5, -2, 1),
-    DIRT_ROAD("Camino", 5, "#795548", "Pista de tierra básica rural.", 0, 0, 0, 0, 0, 0, 1),
-    ROAD("Carretera", 10, "#555555", "Camino para transporte. Conecta zonas urbanas.", 0, 0, 0, 0, 0, 0, 1),
-    HIGHWAY("Autopista", 30, "#424242", "Vía rápida pavimentada y ancha.", 0, 0, 0, 0, 1, 0, 2),
-    HOUSE("Residencia", 100, "#2ECC71", "Aumenta la población de la ciudad. Requiere agua/luz.", 15, 0, 0, 0, 1, 3, 1),
-    SKYSCRAPER("Rascacielos", 1500, "#34495E", "Gran densidad poblacional. Requiere servicios.", 200, 0, 0, 80, 10, -2, 5),
-    FACTORY("Zona Industrial", 250, "#E74C3C", "Produce ingresos diarios muy altos pero genera polución.", 0, 0, 0, 40, 15, -8, 2),
-    COMMERCE("Zona Comercial", 180, "#F1C40F", "Suministra servicios urbanos. Genera ingresos y eleva felicidad.", 0, 0, 0, 15, 2, 8, 2),
+    ZONE_RESIDENTIAL("Zona Residencial", 50, "#81D4FA", "Área para construcción de viviendas. Atrae población con el tiempo.", 0, 0, 0, 0, 0, 1, 1),
+    ZONE_COMMERCIAL("Zona Comercial", 80, "#FFF59D", "Área para comercio y tiendas. Genera empleos y dinero.", 0, 0, 0, 5, 1, 2, 1),
+    ZONE_INDUSTRIAL("Zona Industrial", 100, "#A1887F", "Área para fábricas. Genera mucho dinero pero contamina.", 0, 0, 0, 15, 5, -2, 1),
+    DIRT_ROAD("Camino", 5, "#9E9E9E", "Pista de tierra básica rural.", 0, 0, 0, 0, 0, 0, 1),
+    ROAD("Carretera", 10, "#9E9E9E", "Camino para transporte. Conecta zonas urbanas.", 0, 0, 0, 0, 0, 0, 1),
+    HIGHWAY("Autopista", 30, "#757575", "Vía rápida pavimentada y ancha.", 0, 0, 0, 0, 1, 0, 2),
+    HOUSE("Residencia", 100, "#81D4FA", "Aumenta la población de la ciudad. Requiere agua/luz.", 15, 0, 0, 0, 1, 3, 1),
+    SKYSCRAPER("Rascacielos", 1500, "#29B6F6", "Gran densidad poblacional. Requiere servicios.", 200, 0, 0, 80, 10, -2, 5),
+    FACTORY("Fábrica", 250, "#8D6E63", "Produce ingresos diarios muy altos pero genera polución.", 0, 0, 0, 40, 15, -8, 2),
+    COMMERCE("Comercio", 180, "#FBC02D", "Suministra servicios urbanos. Genera ingresos y eleva felicidad.", 0, 0, 0, 15, 2, 8, 2),
     OFFICE("Oficinas", 800, "#95A5A6", "Centro de negocios corporativos. Genera muchos ingresos.", 0, 0, 0, 100, 5, 2, 4),
     HOTEL("Hotel", 1000, "#F39C12", "Atrae turismo. Genera ingresos considerables y felicidad.", 10, 0, 0, 50, 8, 15, 6),
     BANK("Banco", 1200, "#D4AF37", "Institución financiera. Capitaliza fuertemente a tu ciudad.", 0, 0, 0, 150, 2, 5, 8),
@@ -70,14 +70,34 @@ enum class BuildingType(
     ECOLOGIC_WATER("Acueducto", 220, "#2980B9", "Proporciona suministro de agua dulce potable.", 0, 0, 60, 0, 0, 5, 4)
 }
 
+enum class EventType { INFO, WARNING, SUCCESS, DANGER }
+
+data class CityEvent(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val message: String,
+    val type: EventType,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
 class CityViewModel(private val repository: CityRepository) : ViewModel() {
 
     private val _isInitialized = MutableStateFlow(false)
     private val _isIsometricMode = MutableStateFlow(true)
     private val _isGraphicsAdvanced = MutableStateFlow(true)
     private val _dayTimeProgress = MutableStateFlow(0.2f)
+    private val _events = MutableStateFlow<List<CityEvent>>(emptyList())
 
     val dayTimeProgress: StateFlow<Float> = _dayTimeProgress.asStateFlow()
+    val events: StateFlow<List<CityEvent>> = _events.asStateFlow()
+
+    fun addEvent(message: String, type: EventType) {
+        val currentEvents = _events.value.toMutableList()
+        currentEvents.add(0, CityEvent(message = message, type = type))
+        if (currentEvents.size > 20) {
+            currentEvents.removeLast()
+        }
+        _events.value = currentEvents
+    }
 
     val uiState: StateFlow<CityUiState> = combine(
         repository.cityState,
@@ -289,6 +309,42 @@ class CityViewModel(private val repository: CityRepository) : ViewModel() {
                         revenue = currentState.revenue + netIncome,
                         expenses = currentState.expenses
                     )
+
+                    // Event Generation
+                    val previousPowerShortage = currentState.power < 0
+                    if (powerShortage && !previousPowerShortage) {
+                        addEvent("Alerta: ¡Escasez de energía! Construye centrales eléctricas.", EventType.DANGER)
+                    } else if (!powerShortage && previousPowerShortage) {
+                        addEvent("El suministro de energía es estable.", EventType.SUCCESS)
+                    }
+
+                    val previousWaterShortage = currentState.water < 0
+                    if (waterShortage && !previousWaterShortage) {
+                        addEvent("Alerta: ¡Falta agua potable! Construye acueductos.", EventType.DANGER)
+                    } else if (!waterShortage && previousWaterShortage) {
+                        addEvent("El suministro de agua es estable.", EventType.SUCCESS)
+                    }
+
+                    if (calculatedLevel > currentState.level) {
+                        addEvent("¡Nivel \${calculatedLevel}! Nuevos edificios desbloqueados.", EventType.SUCCESS)
+                    }
+
+                    if (calculatedHappiness < 50 && currentState.happiness >= 50) {
+                        addEvent("Advertencia: La felicidad ciudadana está cayendo.", EventType.WARNING)
+                    } else if (calculatedHappiness >= 80 && currentState.happiness < 80) {
+                        addEvent("¡Tus ciudadanos están muy felices!", EventType.SUCCESS)
+                    }
+
+                    if (currentPop >= 50 && currentState.population < 50) {
+                        addEvent("¡Hito! La población alcanzó los 50 habitantes.", EventType.INFO)
+                    } else if (currentPop >= 100 && currentState.population < 100) {
+                        addEvent("¡Gran metrópolis! La población superó los 100 habitantes.", EventType.INFO)
+                    }
+
+                    if (newState.money < 0 && currentState.money >= 0) {
+                        addEvent("Alerta: ¡Bancarrota inminente! Presupuesto en negativo.", EventType.DANGER)
+                    }
+
                     repository.updateState(newState)
                 }
                 
