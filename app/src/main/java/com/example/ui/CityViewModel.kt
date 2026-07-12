@@ -2,6 +2,7 @@ package com.example.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+
 import androidx.lifecycle.viewModelScope
 import com.example.data.BuildingEntity
 import com.example.data.CityRepository
@@ -16,6 +17,12 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+
+enum class WeatherCondition(val displayName: String) {
+    SUNNY("Soleado"),
+    RAINY("Lluvioso"),
+    SNOWY("Nevado")
+}
 data class CityUiState(
     val money: Int = 1000,
     val population: Int = 0,
@@ -30,7 +37,8 @@ data class CityUiState(
     val buildings: List<BuildingEntity> = emptyList(),
     val isInitialized: Boolean = false,
     val isIsometricMode: Boolean = true,
-    val isGraphicsAdvanced: Boolean = true
+    val isGraphicsAdvanced: Boolean = true,
+    val weather: WeatherCondition = WeatherCondition.SUNNY
 )
 
 enum class BuildingType(
@@ -85,6 +93,7 @@ class CityViewModel(private val repository: CityRepository) : ViewModel() {
     private val _isIsometricMode = MutableStateFlow(true)
     private val _isGraphicsAdvanced = MutableStateFlow(true)
     private val _dayTimeProgress = MutableStateFlow(0.2f)
+    private val _weatherCondition = MutableStateFlow(WeatherCondition.SUNNY)
     private val _events = MutableStateFlow<List<CityEvent>>(emptyList())
 
     val dayTimeProgress: StateFlow<Float> = _dayTimeProgress.asStateFlow()
@@ -104,7 +113,8 @@ class CityViewModel(private val repository: CityRepository) : ViewModel() {
         repository.buildings,
         _isInitialized,
         _isIsometricMode,
-        _isGraphicsAdvanced
+        _isGraphicsAdvanced,
+        _weatherCondition
     ) { flowsArray ->
         val state = flowsArray[0] as? CityStateEntity
         @Suppress("UNCHECKED_CAST")
@@ -112,6 +122,7 @@ class CityViewModel(private val repository: CityRepository) : ViewModel() {
         val initialized = flowsArray[2] as? Boolean ?: false
         val iso = flowsArray[3] as? Boolean ?: true
         val adv = flowsArray[4] as? Boolean ?: true
+        val weatherCond = flowsArray[5] as? WeatherCondition ?: WeatherCondition.SUNNY
 
         if (state == null) {
             CityUiState(isInitialized = initialized)
@@ -130,7 +141,7 @@ class CityViewModel(private val repository: CityRepository) : ViewModel() {
                 buildings = buildings,
                 isInitialized = initialized,
                 isIsometricMode = iso,
-                isGraphicsAdvanced = adv
+                isGraphicsAdvanced = adv,
             )
         }
     }.stateIn(
@@ -223,7 +234,9 @@ class CityViewModel(private val repository: CityRepository) : ViewModel() {
                     }
                     
                     // 2. Resource Requirements & Constraints check
-                    val energyDemand = activeBuildings.size * 5
+                    var energyDemand = activeBuildings.size * 5
+                    if (_weatherCondition.value == WeatherCondition.SNOWY) energyDemand = (energyDemand * 1.5).toInt() // Heating
+                    if (_weatherCondition.value == WeatherCondition.SUNNY) totalPowerProvided = (totalPowerProvided * 1.2).toInt() // Solar bonus
                     var waterDemand = (currentState.population * 0.8).toInt()
                     
                     val powerShortage = totalPowerProvided < energyDemand
@@ -348,6 +361,16 @@ class CityViewModel(private val repository: CityRepository) : ViewModel() {
                     repository.updateState(newState)
                 }
                 
+                
+                // Weather cycling
+                if (Math.random() < 0.1) { // 10% chance to change weather each tick
+                    val newWeather = WeatherCondition.values().random()
+                    if (newWeather != _weatherCondition.value) {
+                        _weatherCondition.value = newWeather
+                        addEvent("El clima ha cambiado a ${newWeather.displayName}", EventType.INFO)
+                    }
+                }
+
                 // Keep shifting sky lighting angle state continuously
                 _dayTimeProgress.value = (_dayTimeProgress.value + 0.015f) % 1.0f
             }

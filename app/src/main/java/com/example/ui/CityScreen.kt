@@ -1,4 +1,5 @@
 package com.example.ui
+import android.view.animation.OvershootInterpolator
 
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.text.BasicTextField
@@ -23,6 +24,10 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.rememberDrawerState
+import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,15 +57,24 @@ fun CityScreen(viewModel: CityViewModel) {
     
     val scope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState()
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     var showInfoDialog by remember { mutableStateOf(false) }
     var buildingTooltipDialog by remember { mutableStateOf<BuildingType?>(null) }
 
     // Dynamic color gradient background based on Time of Day
     // time: 0.0 (Dawn/Morning) -> 0.25 (Midday) -> 0.65 (Sunset) -> 0.8 (Night)
-    val skyBrush = remember(dayProgress) {
+    val skyBrush = remember(dayProgress, uiState.weather) {
         val color1: Color
         val color2: Color
         when {
+            uiState.weather == WeatherCondition.RAINY -> {
+                color1 = Color(0xFF424242)
+                color2 = Color(0xFF757575)
+            }
+            uiState.weather == WeatherCondition.SNOWY -> {
+                color1 = Color(0xFFCFD8DC)
+                color2 = Color(0xFFECEFF1)
+            }
             dayProgress < 0.2f -> { // Dawn transition
                 val ratio = dayProgress / 0.2f
                 color1 = lerpColor(Color(0xFF0F1E36), Color(0xFFFF9E79), ratio)
@@ -91,21 +105,83 @@ fun CityScreen(viewModel: CityViewModel) {
 
     var cityName by remember { mutableStateOf("Mi Ciudad de EE.UU.") }
 
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet(
+                modifier = Modifier.width(320.dp),
+                drawerContainerColor = Color(0xFF1E1E1E),
+                drawerContentColor = Color.White
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text(
+                        "REPORTES E INDICADORES", 
+                        fontSize = 18.sp, 
+                        fontWeight = FontWeight.Black, 
+                        color = Color.White,
+                        modifier = Modifier.padding(bottom = 16.dp)
+                    )
+                    
+                    CityStatusHud(uiState = uiState, modifier = Modifier.fillMaxWidth())
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    FinancialPanel(uiState = uiState, modifier = Modifier.fillMaxWidth())
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    Text("REGISTRO DE EVENTOS", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.LightGray)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    EventLogOverlay(events = events, modifier = Modifier.fillMaxWidth())
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("OPCIONES DEL MAPA", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.LightGray)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Layers, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Mapa de Densidad", fontSize = 14.sp)
+                        }
+                        Switch(
+                            checked = showDensityOverlay,
+                            onCheckedChange = { showDensityOverlay = it },
+                            colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFF4081), checkedTrackColor = Color(0xFFFF4081).copy(alpha=0.5f))
+                        )
+                    }
+                }
+            }
+        }
+    ) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(Color(0xFFF7F7F7)) // Blanco roto
             .drawBehind {
-                drawRect(skyBrush)
-                if (isNightMode) {
-                    drawStars(this)
+                // Cuadrícula de referencia muy tenue
+                val step = 250f
+                val gridColor = Color.LightGray.copy(alpha = 0.3f)
+                var x = 0f
+                while (x < size.width) {
+                    drawLine(gridColor, androidx.compose.ui.geometry.Offset(x, 0f), androidx.compose.ui.geometry.Offset(x, size.height), 1f)
+                    x += step
+                }
+                var y = 0f
+                while (y < size.height) {
+                    drawLine(gridColor, androidx.compose.ui.geometry.Offset(0f, y), androidx.compose.ui.geometry.Offset(size.width, y), 1f)
+                    y += step
                 }
             }
     ) {
         // Sky Overlay Fixed at Top
-        if (uiState.isGraphicsAdvanced) {
-            CloudSceneryOverlay(dayProgress)
-        }
+        
 
         Column(
             modifier = Modifier.fillMaxSize()
@@ -118,6 +194,10 @@ fun CityScreen(viewModel: CityViewModel) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
+                IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                    Icon(Icons.Default.Menu, contentDescription = "Menu", tint = Color.White)
+                }
+
                 // City Name Editable Area
                 BasicTextField(
                     value = cityName,
@@ -168,19 +248,22 @@ fun CityScreen(viewModel: CityViewModel) {
             // Ocultado por solicitud
             
             // The Map viewport (Scrollable container representing the floats)
-            Box(
+            androidx.compose.foundation.layout.BoxWithConstraints(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
             ) {
+                val screenW = maxWidth.value
+                // For a 20x15 grid with isoW=120, total width is 2100
+                val targetScale = (screenW * 0.7f) / 2100f
 
                 // Vista Cenital (Top-Down Horizontal) - 20x15
-                var scale by remember { mutableFloatStateOf(1.0f) }
+                var scale by remember { mutableFloatStateOf(targetScale) }
                 var offsetX by remember { mutableFloatStateOf(0f) }
                 var offsetY by remember { mutableFloatStateOf(0f) }
                 
-                val minScale = 0.5f
+                val minScale = 0.1f
                 val maxScale = 4f
                 val gridCols = 20
                 val gridRows = 15
@@ -212,22 +295,22 @@ fun CityScreen(viewModel: CityViewModel) {
                             ),
                         contentAlignment = Alignment.Center
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .width(cellSize * gridCols)
-                                .height(cellSize * gridRows)
-                                .background(Color(0xFFC8E6C9)) // Verde claro para terreno vacío
-                                .border(1.dp, Color.Black.copy(alpha=0.3f))
-                        ) {
-                            for (y in 0 until gridRows) {
-                                for (x in 0 until gridCols) {
-                                    val building = uiState.buildings.find { it.x == x && it.y == y }
-                                    val buildingType = building?.let {
-                                        try { BuildingType.valueOf(it.type) } catch (e: Exception) { null }
-                                    }
-
-                                    // Calculate local population density in 2D
-                                    val density = remember(x, y, uiState.buildings) {
+                        if (uiState.isIsometricMode) {
+                            val tileW = 120.dp
+                            val tileH = 200.dp
+                            val isoW = 120.dp
+                            val isoH = 69.28.dp // 30 degrees tilt
+                            
+                            val mapTotalWidth = (isoW / 2) * (gridCols + gridRows)
+                            val mapTotalHeight = (isoH / 2) * (gridCols + gridRows) + (tileH - isoH)
+                            
+                            Box(modifier = Modifier.size(mapTotalWidth, mapTotalHeight)) {
+                                for (y in 0 until gridRows) {
+                                    for (x in 0 until gridCols) {
+                                        val building = uiState.buildings.find { it.x == x && it.y == y }
+                                        val buildingType = building?.type
+                                        
+                                        // Calculate population density
                                         var score = 0f
                                         for (b in uiState.buildings) {
                                             val dist = kotlin.math.abs(b.x - x) + kotlin.math.abs(b.y - y)
@@ -242,135 +325,145 @@ fun CityScreen(viewModel: CityViewModel) {
                                                 score += weight * factor
                                             }
                                         }
-                                        (score / 250f).coerceIn(0f, 1f)
-                                    }
-
-                                    val cellBgColor = if (showDensityOverlay && density > 0f) {
-                                        when {
-                                            density < 0.2f -> Color(0xFF81C784).copy(alpha = 0.5f) // Light Green
-                                            density < 0.5f -> Color(0xFFFFB74D).copy(alpha = 0.75f) // Orange
-                                            density < 0.8f -> Color(0xFFF06292).copy(alpha = 0.85f) // Deep Pink
-                                            else -> Color(0xFFE91E63).copy(alpha = 0.95f) // Vibrant Magenta
-                                        }
-                                    } else if (buildingType != null) {
-                                        Color(android.graphics.Color.parseColor(buildingType.colorHex))
-                                    } else {
-                                        Color.Transparent
-                                    }
-
-                                    Box(
-                                        contentAlignment = Alignment.Center,
-                                        modifier = Modifier
-                                            .offset(x = cellSize * x, y = cellSize * y)
-                                            .size(cellSize)
-                                            .background(cellBgColor)
-                                            .border(
-                                                width = if (selectedCell == Pair(x, y)) 3.dp else 0.5.dp,
-                                                color = if (selectedCell == Pair(x, y)) MaterialTheme.colorScheme.primary else Color.Black.copy(alpha = 0.15f)
-                                            )
-                                            .clickable { selectedCell = Pair(x, y) }
-                                    ) {
-                                        if (buildingType != null) {
-                                            Icon(
-                                                imageVector = get2DIcon(buildingType),
-                                                contentDescription = buildingType.displayName,
-                                                tint = Color.White.copy(alpha = 0.9f),
-                                                modifier = Modifier.size(32.dp)
+                                        val density = (score / 250f).coerceIn(0f, 1f)
+                                        
+                                        val isRoad = buildingType in listOf("ROAD", "DIRT_ROAD", "HIGHWAY")
+                                        val roadConnections = if (isRoad) {
+                                            val topH = uiState.buildings.any { it.x == x && it.y == y - 1 && it.type in listOf("ROAD", "DIRT_ROAD", "HIGHWAY") }
+                                            val rightH = uiState.buildings.any { it.x == x + 1 && it.y == y && it.type in listOf("ROAD", "DIRT_ROAD", "HIGHWAY") }
+                                            val bottomH = uiState.buildings.any { it.x == x && it.y == y + 1 && it.type in listOf("ROAD", "DIRT_ROAD", "HIGHWAY") }
+                                            val leftH = uiState.buildings.any { it.x == x - 1 && it.y == y && it.type in listOf("ROAD", "DIRT_ROAD", "HIGHWAY") }
+                                            intArrayOf(if(topH) 1 else 0, if(rightH) 1 else 0, if(bottomH) 1 else 0, if(leftH) 1 else 0)
+                                        } else null
+                                        
+                                        val posX = (isoW / 2) * (x - y) + (isoW / 2) * (gridRows - 1)
+                                        val posY = (isoH / 2) * (x + y)
+                                        
+                                        Box(
+                                            modifier = Modifier
+                                                .offset(x = posX, y = posY)
+                                                .size(width = tileW, height = tileH)
+                                                .clickable { selectedCell = Pair(x, y) }
+                                        ) {
+                                            Isometric3DTile(
+                                                buildingString = buildingType,
+                                                dayProgress = dayProgress,
+                                                isGraphicsAdvanced = uiState.isGraphicsAdvanced,
+                                                isSelected = (selectedCell == Pair(x, y)),
+                                                roadConnections = roadConnections,
+                                                density = density,
+                                                showDensityOverlay = showDensityOverlay,
+                                                isEdgeTopLeft = (x == 0),
+                                                isEdgeTopRight = (y == 0),
+                                                isEdgeBottomRight = (x == gridCols - 1),
+                                                isEdgeBottomLeft = (y == gridRows - 1)
                                             )
                                         }
-
-                                        if (density > 0f) {
-                                            val densityColor = when {
-                                                density < 0.2f -> Color(0xFF4FC3F7)
-                                                density < 0.5f -> Color(0xFFFFB74D)
-                                                else -> Color(0xFFFF4081)
+                                    }
+                                }
+                            }
+                        } else {
+                            // 2D View Mode
+                            Box(
+                                modifier = Modifier
+                                    .graphicsLayer(rotationX = 55f, rotationZ = 45f)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .width(cellSize * gridCols)
+                                        .height(cellSize * gridRows)
+                                        .background(Color(0xFFC8E6C9))
+                                        .border(1.dp, Color.Black.copy(alpha=0.3f))
+                                ) {
+                                    for (y in 0 until gridRows) {
+                                        for (x in 0 until gridCols) {
+                                            val building = uiState.buildings.find { it.x == x && it.y == y }
+                                            val buildingType = building?.let {
+                                                try { BuildingType.valueOf(it.type) } catch (e: Exception) { null }
                                             }
+                                            
+                                            // Calculate population density
+                                            var score = 0f
+                                            for (b in uiState.buildings) {
+                                                val dist = kotlin.math.abs(b.x - x) + kotlin.math.abs(b.y - y)
+                                                if (dist <= 1) {
+                                                    val weight = when (b.type) {
+                                                        "SKYSCRAPER" -> 200f
+                                                        "HOUSE" -> 20f
+                                                        "ZONE_RESIDENTIAL" -> 10f
+                                                        else -> 0f
+                                                    }
+                                                    val factor = if (dist == 0) 1.0f else 0.5f
+                                                    score += weight * factor
+                                                }
+                                            }
+                                            val density = (score / 250f).coerceIn(0f, 1f)
+                                            
+                                            val cellBgColor = if (showDensityOverlay && density > 0f) {
+                                                when {
+                                                    density < 0.2f -> Color(0xFF81C784).copy(alpha = 0.5f)
+                                                    density < 0.5f -> Color(0xFFFFB74D).copy(alpha = 0.75f)
+                                                    density < 0.8f -> Color(0xFFF06292).copy(alpha = 0.85f)
+                                                    else -> Color(0xFFE91E63).copy(alpha = 0.95f)
+                                                }
+                                            } else if (buildingType != null) {
+                                                Color(android.graphics.Color.parseColor(buildingType.colorHex))
+                                            } else {
+                                                Color.Transparent
+                                            }
+                                            
                                             Box(
+                                                contentAlignment = Alignment.Center,
                                                 modifier = Modifier
-                                                    .align(Alignment.TopStart)
-                                                    .padding(4.dp)
-                                                    .size(6.dp)
-                                                    .background(densityColor, CircleShape)
-                                            )
+                                                    .offset(x = cellSize * x, y = cellSize * y)
+                                                    .size(cellSize)
+                                                    .background(cellBgColor)
+                                                    .border(
+                                                        width = if (selectedCell == Pair(x, y)) 3.dp else 0.5.dp,
+                                                        color = if (selectedCell == Pair(x, y)) MaterialTheme.colorScheme.primary else Color.Black.copy(alpha = 0.15f)
+                                                    )
+                                                    .clickable { selectedCell = Pair(x, y) }
+                                            ) {
+                                                androidx.compose.animation.AnimatedVisibility(
+                                                    visible = buildingType != null,
+                                                    enter = androidx.compose.animation.scaleIn(animationSpec = androidx.compose.animation.core.tween(500, easing = androidx.compose.animation.core.FastOutSlowInEasing)) + androidx.compose.animation.fadeIn(),
+                                                    exit = androidx.compose.animation.fadeOut()
+                                                ) {
+                                                    if (buildingType != null) {
+                                                        Icon(
+                                                            imageVector = get2DIcon(buildingType),
+                                                            contentDescription = buildingType.displayName,
+                                                            tint = Color.White.copy(alpha = 0.9f),
+                                                            modifier = Modifier.size(32.dp)
+                                                        )
+                                                    }
+                                                }
+                                                
+                                                if (density > 0f) {
+                                                    val densityColor = when {
+                                                        density < 0.2f -> Color(0xFF4FC3F7)
+                                                        density < 0.5f -> Color(0xFFFFB74D)
+                                                        else -> Color(0xFFFF4081)
+                                                    }
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .align(Alignment.TopStart)
+                                                            .padding(4.dp)
+                                                            .size(6.dp)
+                                                            .background(densityColor, CircleShape)
+                                                    )
+                                                }
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
                     }
-                }
+
                 
-                // HUD overlay over map
-                CityStatusHud(
-                    uiState = uiState,
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .fillMaxWidth()
-                )
-
-                // Financial Panel Overlay
-                FinancialPanel(
-                    uiState = uiState,
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .padding(end = 16.dp)
-                )
-
-                // Event Logs Notifications Overlay
-                EventLogOverlay(
-                    events = events,
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(start = 16.dp, top = 90.dp) // Below HUD
-                        .widthIn(max = 250.dp)
-                )
-
-                // Floating Density Layer Control
-                Card(
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(16.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = Color(0xFF263238).copy(alpha = 0.85f),
-                        contentColor = Color.White
-                    ),
-                    border = BorderStroke(1.5.dp, Color(0xFF455A64))
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Layers,
-                            contentDescription = "Capa de Densidad",
-                            tint = if (showDensityOverlay) Color(0xFFFF4081) else Color.White,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Text(
-                            text = "Mapa de Densidad",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Switch(
-                            checked = showDensityOverlay,
-                            onCheckedChange = { showDensityOverlay = it },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color(0xFFFF4081),
-                                checkedTrackColor = Color(0xFFFF4081).copy(alpha = 0.4f),
-                                uncheckedThumbColor = Color.LightGray,
-                                uncheckedTrackColor = Color.Gray.copy(alpha = 0.5f)
-                            ),
-                            modifier = Modifier.graphicsLayer(scaleX = 0.8f, scaleY = 0.8f)
-                        )
-                    }
                 }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Lower category tabs and construction tools
+                // Lower category tabs and construction tools
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -715,6 +808,8 @@ fun CityScreen(viewModel: CityViewModel) {
     }
 }
 
+    }
+}
 @Composable
 fun RuleBullet(boldText: String, normalText: String) {
     Row(modifier = Modifier.padding(bottom = 6.dp)) {
@@ -770,7 +865,11 @@ fun Isometric3DTile(
     showGridOverlay: Boolean = false,
     roadConnections: IntArray? = null,
     density: Float = 0f,
-    showDensityOverlay: Boolean = false
+    showDensityOverlay: Boolean = false,
+    isEdgeTopLeft: Boolean = false,
+    isEdgeTopRight: Boolean = false,
+    isEdgeBottomLeft: Boolean = false,
+    isEdgeBottomRight: Boolean = false
 ) {
     // Construction Animation factor (0f rising to 1f)
     var key by remember(buildingString) { mutableStateOf(0) }
@@ -829,10 +928,9 @@ fun Isometric3DTile(
         val h = size.height
         
         // Base of coordinate system inside box
-        val gY = h * 0.65f
-        val rw = w // Make cells perfectly contiguous (width = 83dp)
-        val rh = 47f // (height = 47dp based on step 23.5f * 2)
-        val gt = 14f // ground thickness (Voxel base depth)
+        val rw = w
+        val rh = w * 0.57735f // 30 degrees tilt height
+        val gY = h - rh // Base flat on the bottom of the container
 
         // 1. Draw selections / Tile Highlight glow
         if (isSelected) {
@@ -846,23 +944,7 @@ fun Isometric3DTile(
             drawPath(hPath, color = Color(0xFF64B5F6).copy(alpha = 0.35f))
         }
 
-        // 2. Draw Side Walls of the Voxel Ground base (Volumen)
-        val leftSoilPath = Path().apply {
-            moveTo(w / 2 - rw / 2, gY + rh / 2)
-            lineTo(w / 2, gY + rh)
-            lineTo(w / 2, gY + rh + gt)
-            lineTo(w / 2 - rw / 2, gY + rh / 2 + gt)
-            close()
-        }
-        val rightSoilPath = Path().apply {
-            moveTo(w / 2, gY + rh)
-            lineTo(w / 2 + rw / 2, gY + rh / 2)
-            lineTo(w / 2 + rw / 2, gY + rh / 2 + gt)
-            lineTo(w / 2, gY + rh + gt)
-            close()
-        }
-        drawPath(leftSoilPath, color = Color(0xFFE0E0E0).copy(alpha = 0.8f * illuminationCoefficient))
-        drawPath(rightSoilPath, color = Color(0xFF9E9E9E).copy(alpha = 0.8f * illuminationCoefficient))
+        
 
         // 3. Draw Top Ground Rhombus face (Seamless)
         val topRhombusPath = Path().apply {
@@ -897,6 +979,25 @@ fun Isometric3DTile(
             baseSurfaceColor.copy(alpha = illuminationCoefficient)
         }
         drawPath(topRhombusPath, color = surfaceColor)
+        // Draw soft grid lines
+        drawPath(topRhombusPath, color = Color(0xFF9FB9AB).copy(alpha = 0.5f), style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1f))
+        
+        // Draw outer board borders (Dark green, thick)
+        val outerBorderColor = Color(0xFF2E7D32)
+        val outerBorderWidth = 4f
+        
+        if (isEdgeTopLeft) {
+            drawLine(outerBorderColor, androidx.compose.ui.geometry.Offset(w / 2, gY), androidx.compose.ui.geometry.Offset(w / 2 - rw / 2, gY + rh / 2), strokeWidth = outerBorderWidth)
+        }
+        if (isEdgeTopRight) {
+            drawLine(outerBorderColor, androidx.compose.ui.geometry.Offset(w / 2, gY), androidx.compose.ui.geometry.Offset(w / 2 + rw / 2, gY + rh / 2), strokeWidth = outerBorderWidth)
+        }
+        if (isEdgeBottomLeft) {
+            drawLine(outerBorderColor, androidx.compose.ui.geometry.Offset(w / 2 - rw / 2, gY + rh / 2), androidx.compose.ui.geometry.Offset(w / 2, gY + rh), strokeWidth = outerBorderWidth)
+        }
+        if (isEdgeBottomRight) {
+            drawLine(outerBorderColor, androidx.compose.ui.geometry.Offset(w / 2 + rw / 2, gY + rh / 2), androidx.compose.ui.geometry.Offset(w / 2, gY + rh), strokeWidth = outerBorderWidth)
+        }
 
         // 3b. Population density glowing indicator (Aura & Ring of Influence)
         if (density > 0f && !isRoad) {
@@ -1597,7 +1698,7 @@ fun CloudSceneryOverlay(dayProgress: Float) {
             }
         }
     }
-}
+    }
 
 @Composable
 fun CityStatusHud(
@@ -1701,3 +1802,49 @@ fun EventLogOverlay(
     }
 }
 
+
+@Composable
+fun WeatherOverlay(weather: WeatherCondition) {
+    if (weather == WeatherCondition.SUNNY) return
+
+    val infiniteTransition = rememberInfiniteTransition(label = "weather")
+    val animOffset by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ), label = "weather_anim"
+    )
+
+    androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
+        val w = size.width
+        val h = size.height
+        
+        if (weather == WeatherCondition.RAINY) {
+            val numDrops = 150
+            for (i in 0 until numDrops) {
+                val x = (i * 1234567f) % w
+                val startY = ((i * 9876543f) % h + animOffset * h * 1.5f) % h
+                drawLine(
+                    color = Color(0xFF81D4FA).copy(alpha = 0.6f),
+                    start = androidx.compose.ui.geometry.Offset(x, startY),
+                    end = androidx.compose.ui.geometry.Offset(x + 5f, startY + 20f),
+                    strokeWidth = 2f
+                )
+            }
+        } else if (weather == WeatherCondition.SNOWY) {
+            val numFlakes = 100
+            for (i in 0 until numFlakes) {
+                val x = ((i * 1234567f) % w + animOffset * 100f) % w
+                val y = ((i * 9876543f) % h + animOffset * h) % h
+                val radius = 3f + (i % 3)
+                drawCircle(
+                    color = Color.White.copy(alpha = 0.8f),
+                    radius = radius,
+                    center = androidx.compose.ui.geometry.Offset(x, y)
+                )
+            }
+        }
+    }
+}

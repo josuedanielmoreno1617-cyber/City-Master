@@ -1,0 +1,11 @@
+with open('app/src/main/java/com/example/ui/CityScreen.kt', 'r') as f:
+    lines = f.readlines()
+
+for i, line in enumerate(lines):
+    if "fun RuleBullet(" in line:
+        composable_idx = i - 1
+        lines.insert(composable_idx, "}\n")
+        break
+
+with open('app/src/main/java/com/example/ui/CityScreen.kt', 'w') as f:
+    f.writelines(lines)
